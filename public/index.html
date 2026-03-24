@@ -7,11 +7,35 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <aside id="sideMenu" class="side-menu" aria-label="Recent chats">
+    <aside id="sideMenu" class="side-menu" aria-label="Chat menu">
       <div class="side-menu-header">
-        <h2>Recent chats</h2>
+        <h2>Menu</h2>
         <button id="closeMenuButton" class="icon-button" type="button" aria-label="Close menu">✕</button>
       </div>
+
+      <section class="side-menu-settings" aria-labelledby="settingsHeading">
+        <h3 id="settingsHeading" class="side-menu-subheading">Settings</h3>
+        <label class="settings-label" for="settingsModel">Model</label>
+        <input
+          type="text"
+          id="settingsModel"
+          class="settings-input"
+          name="settingsModel"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="e.g. openai/gpt-4o-mini"
+        />
+        <button type="button" id="saveModelButton" class="secondary-button settings-row-button">
+          Save model
+        </button>
+        <p id="settingsKeyStatus" class="settings-hint"></p>
+        <div class="settings-key-actions">
+          <button type="button" id="changeApiKeyButton" class="secondary-button">Change API key</button>
+          <button type="button" id="removeApiKeyButton" class="danger-button">Remove API key</button>
+        </div>
+      </section>
+
+      <h3 class="side-menu-subheading">Recent chats</h3>
       <ul id="recentList" class="archive-list"></ul>
     </aside>
     <div id="menuBackdrop" class="menu-backdrop hidden"></div>
