@@ -13,12 +13,17 @@ export type PersistState = {
   apiKey: string;
   /** Chat completion model id (sent to server on each message). */
   model: string;
+  /**
+   * System prompt for the model. Empty string: server uses its built-in default preset.
+   */
+  systemPrompt: string;
   chatState: ChatState;
 };
 
 export const persistStateAtom = atom<PersistState>({
   apiKey: "",
   model: "",
+  systemPrompt: "",
   chatState: { activeMessages: [], archivedChats: [] },
 });
 

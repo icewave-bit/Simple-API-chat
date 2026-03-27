@@ -8,7 +8,7 @@ const LOCAL_STORAGE_DB_KEY = "ai-chat-db-v1";
 // Schema:
 // - chats: archived chat metadata
 // - messages: messages for both archived chats (chatId=<archivedId>) and active chat (chatId='current')
-// - settings: persisted key/value pairs (we store apiKey under key='apiKey')
+// - settings: apiKey, aiModel, systemPrompt
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
@@ -62,6 +62,15 @@ const loadApiKey = (db: any): string => {
 const loadModel = (db: any): string => {
   const result = db.exec(
     "SELECT value FROM settings WHERE key='aiModel' LIMIT 1;"
+  ) as undefined | { values: unknown[][] }[];
+  const rows = result?.[0]?.values;
+  if (!rows || rows.length === 0) return "";
+  return String(rows[0]?.[0] ?? "");
+};
+
+const loadSystemPrompt = (db: any): string => {
+  const result = db.exec(
+    "SELECT value FROM settings WHERE key='systemPrompt' LIMIT 1;"
   ) as undefined | { values: unknown[][] }[];
   const rows = result?.[0]?.values;
   if (!rows || rows.length === 0) return "";
@@ -128,11 +137,13 @@ export const initLocalDbAndLoad = async (): Promise<{ loaded: PersistState; db: 
 
   const apiKey = loadApiKey(db);
   const model = loadModel(db);
+  const systemPrompt = loadSystemPrompt(db);
   const chatState = loadChatState(db);
 
   const loaded: PersistState = {
     apiKey,
     model,
+    systemPrompt,
     chatState,
   };
 
@@ -149,7 +160,7 @@ export const savePersistStateToLocalDb = (
   // Wipe and reinsert (simple & deterministic for small histories).
   db.exec("DELETE FROM chats;");
   db.exec("DELETE FROM messages;");
-  db.exec("DELETE FROM settings WHERE key IN ('apiKey', 'aiModel');");
+  db.exec("DELETE FROM settings WHERE key IN ('apiKey', 'aiModel', 'systemPrompt');");
 
   if (persistState.apiKey) {
     const escaped = persistState.apiKey.replaceAll("'", "''");
@@ -159,6 +170,11 @@ export const savePersistStateToLocalDb = (
   if (persistState.model.trim()) {
     const escapedModel = persistState.model.replaceAll("'", "''");
     db.exec(`INSERT INTO settings (key, value) VALUES ('aiModel', '${escapedModel}');`);
+  }
+
+  if (persistState.systemPrompt.trim()) {
+    const escapedSp = persistState.systemPrompt.replaceAll("'", "''");
+    db.exec(`INSERT INTO settings (key, value) VALUES ('systemPrompt', '${escapedSp}');`);
   }
 
   // Archived chats.

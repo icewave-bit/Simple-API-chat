@@ -756,6 +756,7 @@
       persistStateAtom = atom({
         apiKey: "",
         model: "",
+        systemPrompt: "",
         chatState: { activeMessages: [], archivedChats: [] }
       });
       uiAtom = atom({
@@ -2902,7 +2903,7 @@
   });
 
   // public/sqliteClient.ts
-  var import_sql, LOCAL_STORAGE_DB_KEY, SCHEMA_SQL, encodeBase64, decodeBase64, loadApiKey, loadModel, loadChatState, initLocalDbAndLoad, savePersistStateToLocalDb;
+  var import_sql, LOCAL_STORAGE_DB_KEY, SCHEMA_SQL, encodeBase64, decodeBase64, loadApiKey, loadModel, loadSystemPrompt, loadChatState, initLocalDbAndLoad, savePersistStateToLocalDb;
   var init_sqliteClient = __esm({
     "public/sqliteClient.ts"() {
       import_sql = __toESM(require_sql_wasm_browser());
@@ -2956,6 +2957,14 @@ CREATE TABLE IF NOT EXISTS settings (
         if (!rows || rows.length === 0) return "";
         return String(rows[0]?.[0] ?? "");
       };
+      loadSystemPrompt = (db) => {
+        const result = db.exec(
+          "SELECT value FROM settings WHERE key='systemPrompt' LIMIT 1;"
+        );
+        const rows = result?.[0]?.values;
+        if (!rows || rows.length === 0) return "";
+        return String(rows[0]?.[0] ?? "");
+      };
       loadChatState = (db) => {
         const activeResult = db.exec(
           "SELECT role, content, createdAt, seq FROM messages WHERE chatId='current' ORDER BY seq ASC;"
@@ -3000,10 +3009,12 @@ CREATE TABLE IF NOT EXISTS settings (
         db.exec(SCHEMA_SQL);
         const apiKey = loadApiKey(db);
         const model = loadModel(db);
+        const systemPrompt = loadSystemPrompt(db);
         const chatState = loadChatState(db);
         const loaded = {
           apiKey,
           model,
+          systemPrompt,
           chatState
         };
         return { loaded, db, SQL };
@@ -3012,7 +3023,7 @@ CREATE TABLE IF NOT EXISTS settings (
         db.exec("BEGIN TRANSACTION;");
         db.exec("DELETE FROM chats;");
         db.exec("DELETE FROM messages;");
-        db.exec("DELETE FROM settings WHERE key IN ('apiKey', 'aiModel');");
+        db.exec("DELETE FROM settings WHERE key IN ('apiKey', 'aiModel', 'systemPrompt');");
         if (persistState.apiKey) {
           const escaped = persistState.apiKey.replaceAll("'", "''");
           db.exec(`INSERT INTO settings (key, value) VALUES ('apiKey', '${escaped}');`);
@@ -3020,6 +3031,10 @@ CREATE TABLE IF NOT EXISTS settings (
         if (persistState.model.trim()) {
           const escapedModel = persistState.model.replaceAll("'", "''");
           db.exec(`INSERT INTO settings (key, value) VALUES ('aiModel', '${escapedModel}');`);
+        }
+        if (persistState.systemPrompt.trim()) {
+          const escapedSp = persistState.systemPrompt.replaceAll("'", "''");
+          db.exec(`INSERT INTO settings (key, value) VALUES ('systemPrompt', '${escapedSp}');`);
         }
         for (const chat of persistState.chatState.archivedChats) {
           const id = chat.id.replaceAll("'", "''");
@@ -3075,7 +3090,8 @@ CREATE TABLE IF NOT EXISTS settings (
       var closeMenuButton = getEl("closeMenuButton");
       var menuBackdrop = getEl("menuBackdrop");
       var settingsModelInput = getEl("settingsModel");
-      var saveModelButton = getEl("saveModelButton");
+      var settingsSystemPromptInput = getEl("settingsSystemPrompt");
+      var saveSettingsButton = getEl("saveSettingsButton");
       var changeApiKeyButton = getEl("changeApiKeyButton");
       var removeApiKeyButton = getEl("removeApiKeyButton");
       var settingsKeyStatus = getEl("settingsKeyStatus");
@@ -3179,11 +3195,15 @@ CREATE TABLE IF NOT EXISTS settings (
           if (document.activeElement !== settingsModelInput) {
             settingsModelInput.value = persistState.model;
           }
+          if (document.activeElement !== settingsSystemPromptInput) {
+            settingsSystemPromptInput.value = persistState.systemPrompt;
+          }
           settingsKeyStatus.textContent = persistState.apiKey ? "API key is stored only in this browser." : "No API key \u2014 add one via the dialog to send messages.";
           removeApiKeyButton.disabled = !persistState.apiKey || ui.isSending;
           changeApiKeyButton.disabled = ui.isSending;
-          saveModelButton.disabled = ui.isSending;
+          saveSettingsButton.disabled = ui.isSending;
           settingsModelInput.disabled = ui.isSending;
+          settingsSystemPromptInput.disabled = ui.isSending;
         }
       };
       var renderAll = () => {
@@ -3341,6 +3361,7 @@ CREATE TABLE IF NOT EXISTS settings (
               apiKey: persistState.apiKey,
               message,
               model: persistState.model.trim(),
+              systemPrompt: persistState.systemPrompt.trim(),
               state: persistState.chatState
             })
           });
@@ -3396,13 +3417,18 @@ CREATE TABLE IF NOT EXISTS settings (
       menuButton.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: true })));
       closeMenuButton.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: false })));
       menuBackdrop.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: false })));
-      saveModelButton.addEventListener("click", () => {
-        const next = settingsModelInput.value.trim();
-        if (!next) {
+      saveSettingsButton.addEventListener("click", () => {
+        const nextModel = settingsModelInput.value.trim();
+        if (!nextModel) {
           pushUiSystemMessage("Model cannot be empty.");
           return;
         }
-        store.set(persistStateAtom, { ...store.get(persistStateAtom), model: next });
+        const nextSystem = settingsSystemPromptInput.value;
+        store.set(persistStateAtom, {
+          ...store.get(persistStateAtom),
+          model: nextModel,
+          systemPrompt: nextSystem
+        });
       });
       changeApiKeyButton.addEventListener("click", () => {
         const panel = ensureApiKeyPanel();

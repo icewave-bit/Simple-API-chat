@@ -24,11 +24,17 @@ type ChatState = {
 };
 
 type ChatStateRequest = { state: ChatState };
+/** Used when the client sends an empty `systemPrompt`. */
+const DEFAULT_SYSTEM_PROMPT =
+  "You are a concise, friendly assistant in a web chat app. Keep answers clear and helpful.";
+
 type ChatSendRequest = {
   apiKey: string;
   message: string;
   state: ChatState;
   model?: string;
+  /** Overrides DEFAULT_SYSTEM_PROMPT when non-empty after trim. */
+  systemPrompt?: string;
 };
 type ChatOpenRequest = { chatId: string; state: ChatState };
 
@@ -210,6 +216,10 @@ app.post(
       });
     }
 
+    const systemPrompt =
+      typeof body?.systemPrompt === "string" ? body.systemPrompt.trim() : "";
+    const systemContent = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+
     try {
       const userEntry: ChatMessage = {
         role: "user",
@@ -220,8 +230,7 @@ app.post(
       const messagesForModel = [
         {
           role: "system" as const,
-          content:
-            "You are a concise, friendly assistant in a web chat app. Keep answers clear and helpful.",
+          content: systemContent,
         },
         ...state.activeMessages.map(toAIMessage),
         toAIMessage(userEntry),

@@ -97,6 +97,28 @@ body {
   line-height: 1.35;
 }
 
+.settings-hint-tight {
+  margin-top: 0.15rem;
+  margin-bottom: 0.35rem;
+}
+
+.settings-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 4.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.settings-textarea:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .settings-key-actions {
   display: flex;
   flex-wrap: wrap;

@@ -20,7 +20,8 @@ const menuButton = getEl<HTMLButtonElement>("menuButton");
 const closeMenuButton = getEl<HTMLButtonElement>("closeMenuButton");
 const menuBackdrop = getEl<HTMLDivElement>("menuBackdrop");
 const settingsModelInput = getEl<HTMLInputElement>("settingsModel");
-const saveModelButton = getEl<HTMLButtonElement>("saveModelButton");
+const settingsSystemPromptInput = getEl<HTMLTextAreaElement>("settingsSystemPrompt");
+const saveSettingsButton = getEl<HTMLButtonElement>("saveSettingsButton");
 const changeApiKeyButton = getEl<HTMLButtonElement>("changeApiKeyButton");
 const removeApiKeyButton = getEl<HTMLButtonElement>("removeApiKeyButton");
 const settingsKeyStatus = getEl<HTMLParagraphElement>("settingsKeyStatus");
@@ -155,13 +156,17 @@ const renderUi = () => {
     if (document.activeElement !== settingsModelInput) {
       settingsModelInput.value = persistState.model;
     }
+    if (document.activeElement !== settingsSystemPromptInput) {
+      settingsSystemPromptInput.value = persistState.systemPrompt;
+    }
     settingsKeyStatus.textContent = persistState.apiKey
       ? "API key is stored only in this browser."
       : "No API key — add one via the dialog to send messages.";
     removeApiKeyButton.disabled = !persistState.apiKey || ui.isSending;
     changeApiKeyButton.disabled = ui.isSending;
-    saveModelButton.disabled = ui.isSending;
+    saveSettingsButton.disabled = ui.isSending;
     settingsModelInput.disabled = ui.isSending;
+    settingsSystemPromptInput.disabled = ui.isSending;
   }
 };
 
@@ -216,6 +221,23 @@ const ensureApiKeyPanel = () => {
   input.style.borderRadius = "10px";
   input.style.padding = "10px";
 
+  const modelLabel = document.createElement("label");
+  modelLabel.textContent = "Model";
+  modelLabel.style.display = "block";
+  modelLabel.style.marginBottom = "6px";
+  modelLabel.style.fontWeight = "600";
+  modelLabel.style.marginTop = "12px";
+
+  const modelInput = document.createElement("input");
+  modelInput.type = "text";
+  modelInput.autocomplete = "off";
+  modelInput.dataset.field = "model";
+  modelInput.placeholder = "e.g. openai/gpt-4o-mini";
+  modelInput.style.width = "100%";
+  modelInput.style.border = "1px solid #d1d5db";
+  modelInput.style.borderRadius = "10px";
+  modelInput.style.padding = "10px";
+
   const row = document.createElement("div");
   row.style.display = "flex";
   row.style.gap = "10px";
@@ -242,13 +264,15 @@ const ensureApiKeyPanel = () => {
   row.append(save, cancel);
 
   panel.append(card);
-  card.append(title, hint, label, input, row);
+  card.append(title, hint, label, input, modelLabel, modelInput, row);
 
   const persistAndClose = () => {
     const apiKey = input.value.trim();
+    const model = modelInput.value.trim();
     if (!apiKey) return;
+    if (!model) return;
     const prev = store.get(persistStateAtom);
-    store.set(persistStateAtom, { ...prev, apiKey });
+    store.set(persistStateAtom, { ...prev, apiKey, model });
     setUi((u) => ({ ...u, apiKeyPanelOpen: false }));
   };
 
@@ -267,15 +291,30 @@ const renderApiKeyPanelVisibility = () => {
   const ui = store.get(uiAtom);
   const h2 = panel.querySelector("h2");
   if (h2) {
-    h2.textContent = persistState.apiKey ? "Change API key" : "Enter your API key";
+    const modelMissing = !persistState.model.trim();
+    if (!persistState.apiKey && modelMissing) h2.textContent = "Enter API key and model";
+    else if (!persistState.apiKey) h2.textContent = "Enter your API key";
+    else if (modelMissing) h2.textContent = "Enter model type";
+    else h2.textContent = "Change API key and model";
   }
-  const shouldShow = !persistState.apiKey || ui.apiKeyPanelOpen;
+  const shouldShow =
+    !persistState.apiKey || !persistState.model.trim() || ui.apiKeyPanelOpen;
   panel.style.display = shouldShow ? "flex" : "none";
 
   if (shouldShow) {
     const input = panel.querySelector("input[type='password']") as HTMLInputElement | null;
-    if (input && !persistState.apiKey) input.placeholder = "Paste API key";
-    input?.focus();
+    const modelInput = panel.querySelector("input[data-field='model']") as
+      | HTMLInputElement
+      | null;
+
+    if (modelInput && persistState.model.trim()) modelInput.value = persistState.model;
+
+    if (!persistState.apiKey) {
+      if (input) input.placeholder = "Paste API key";
+      input?.focus();
+      return;
+    }
+    modelInput?.focus();
   }
 };
 
@@ -334,13 +373,8 @@ chatForm.addEventListener("submit", async (event) => {
   if (!message) return;
 
   const persistState = store.get(persistStateAtom);
-  if (!persistState.apiKey) {
+  if (!persistState.apiKey || !persistState.model.trim()) {
     renderApiKeyPanelVisibility();
-    return;
-  }
-  if (!persistState.model.trim()) {
-    pushUiSystemMessage("Set a model under Menu → Settings (example shape: openai/gpt-4o-mini).");
-    setUi((prev) => ({ ...prev, isMenuOpen: true }));
     return;
   }
 
@@ -354,6 +388,7 @@ chatForm.addEventListener("submit", async (event) => {
         apiKey: persistState.apiKey,
         message,
         model: persistState.model.trim(),
+        systemPrompt: persistState.systemPrompt.trim(),
         state: persistState.chatState,
       }),
     });
@@ -419,13 +454,18 @@ menuButton.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpe
 closeMenuButton.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: false })));
 menuBackdrop.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: false })));
 
-saveModelButton.addEventListener("click", () => {
-  const next = settingsModelInput.value.trim();
-  if (!next) {
+saveSettingsButton.addEventListener("click", () => {
+  const nextModel = settingsModelInput.value.trim();
+  if (!nextModel) {
     pushUiSystemMessage("Model cannot be empty.");
     return;
   }
-  store.set(persistStateAtom, { ...store.get(persistStateAtom), model: next });
+  const nextSystem = settingsSystemPromptInput.value;
+  store.set(persistStateAtom, {
+    ...store.get(persistStateAtom),
+    model: nextModel,
+    systemPrompt: nextSystem,
+  });
 });
 
 changeApiKeyButton.addEventListener("click", () => {

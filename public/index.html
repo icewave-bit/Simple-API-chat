@@ -25,8 +25,22 @@
           spellcheck="false"
           placeholder="e.g. openai/gpt-4o-mini"
         />
-        <button type="button" id="saveModelButton" class="secondary-button settings-row-button">
-          Save model
+        <label class="settings-label" for="settingsSystemPrompt">Assistant instructions</label>
+        <p class="settings-hint settings-hint-tight">
+          Optional system prompt sent with every message. Leave empty to use the app default (same idea as:
+          “You are a concise, friendly assistant in a web chat app. Keep answers clear and helpful.”).
+        </p>
+        <textarea
+          id="settingsSystemPrompt"
+          class="settings-textarea"
+          name="settingsSystemPrompt"
+          rows="4"
+          autocomplete="off"
+          spellcheck="true"
+          placeholder="Your instructions (or leave empty for built‑in preset)"
+        ></textarea>
+        <button type="button" id="saveSettingsButton" class="secondary-button settings-row-button">
+          Save settings
         </button>
         <p id="settingsKeyStatus" class="settings-hint"></p>
         <div class="settings-key-actions">
