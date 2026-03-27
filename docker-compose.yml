@@ -6,23 +6,19 @@ name: ai-chat
 services:
   app:
     build: .
-    image: ai-chat:latest
     restart: unless-stopped
     env_file:
       - .env
     environment:
       PORT: ${PORT:-3005}
+    expose:
+      - 3005
     networks:
-      - traefik_edge
+      - proxy
     labels:
       - traefik.enable=true
-      - traefik.docker.network=${TRAEFIK_DOCKER_NETWORK:-traefik}
       - traefik.http.routers.ai-chat.rule=Host(`${APP_HOST}`)
-      - traefik.http.routers.ai-chat.entrypoints=${TRAEFIK_HTTPS_ENTRYPOINT:-websecure}
-      - traefik.http.routers.ai-chat.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
-      - traefik.http.services.ai-chat.loadbalancer.server.port=${PORT:-3005}
-
+      - traefik.http.routers.ai-chat.entrypoints=web-secure
 networks:
-  traefik_edge:
+  proxy:
     external: true
-    name: ${TRAEFIK_DOCKER_NETWORK:-traefik}
