@@ -327,6 +327,10 @@ app.post(
   }
 );
 
+app.get("/legacy", (_req: Request, res: Response) => {
+  res.sendFile(path.join(PUBLIC_DIR, "legacy.html"));
+});
+
 app.post(
   "/api/chat/open",
   async (req: Request<{}, any, unknown>, res: Response): Promise<Response | void> => {

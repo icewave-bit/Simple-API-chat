@@ -40,6 +40,44 @@ const appendMessage = (message: ChatMessage) => {
   chatLog.appendChild(bubble);
 };
 
+const appendOnboardingCard = () => {
+  const card = document.createElement("article");
+  card.className = "message assistant onboarding";
+
+  const title = document.createElement("p");
+  title.className = "onboarding-title";
+  title.textContent = "Welcome — you can start in a minute.";
+
+  const list = document.createElement("ol");
+  list.className = "onboarding-steps";
+
+  const step1 = document.createElement("li");
+  step1.textContent =
+    "Open the menu (top-left) → Settings, and add your API key plus model. Keys stay in this browser only.";
+
+  const step2 = document.createElement("li");
+  step2.textContent = "Come back here and type your first message — no pop-ups unless you open setup yourself.";
+
+  list.append(step1, step2);
+
+  const actions = document.createElement("div");
+  actions.className = "onboarding-actions";
+
+  const openSetup = document.createElement("button");
+  openSetup.type = "button";
+  openSetup.className = "secondary-button";
+  openSetup.textContent = "Open setup";
+
+  actions.append(openSetup);
+
+  card.append(title, list, actions);
+  chatLog.appendChild(card);
+
+  openSetup.addEventListener("click", () => {
+    setUi((u) => ({ ...u, apiKeyPanelOpen: true }));
+  });
+};
+
 const setUi = (updater: (prev: UIState) => UIState) => {
   const prev = store.get(uiAtom);
   store.set(uiAtom, updater(prev));
@@ -75,12 +113,18 @@ const renderChat = () => {
   const ui = store.get(uiAtom);
   const { activeMessages } = persistState.chatState;
 
+  const setupComplete = Boolean(persistState.apiKey.trim() && persistState.model.trim());
+
   if (activeMessages.length === 0) {
-    appendMessage({
-      role: "assistant",
-      content: "Hi! Ask me anything.",
-      createdAt: new Date().toISOString(),
-    });
+    if (setupComplete) {
+      appendMessage({
+        role: "assistant",
+        content: "Hi — ask anything. Use the menu for model and key settings.",
+        createdAt: new Date().toISOString(),
+      });
+    } else {
+      appendOnboardingCard();
+    }
   } else {
     activeMessages.forEach(appendMessage);
   }
@@ -120,17 +164,31 @@ const renderRecent = () => {
     item.className = "archive-item";
     item.dataset.chatId = chat.id;
 
+    const main = document.createElement("div");
+    main.className = "archive-item-main";
+
     const title = document.createElement("span");
     title.className = "archive-item-title";
     title.textContent = chat.isCurrent ? `Current: ${chat.title}` : chat.title;
 
     const meta = document.createElement("span");
     meta.className = "archive-item-meta";
-    meta.textContent = `${chat.messagesCount} msgs ${formatDate(chat.createdAt)}`;
+    meta.textContent = `${chat.messagesCount} msgs · ${formatDate(chat.createdAt)}`;
 
-    item.append(title, meta);
+    main.append(title, meta);
+    item.append(main);
 
-    if (!chat.isCurrent) item.classList.add("clickable");
+    if (!chat.isCurrent) {
+      item.classList.add("clickable");
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "archive-delete";
+      del.dataset.action = "delete";
+      del.setAttribute("aria-label", `Delete chat: ${chat.title}`);
+      del.textContent = "✕";
+      item.append(del);
+    }
+
     recentList.appendChild(item);
   });
 };
@@ -150,7 +208,8 @@ const renderUi = () => {
   messageInput.disabled = ui.isSending;
   newChatButton.disabled = ui.isSending;
 
-  sendButton.textContent = ui.isSending ? "Sending..." : "Send";
+  sendButton.setAttribute("aria-busy", ui.isSending ? "true" : "false");
+  sendButton.setAttribute("aria-label", ui.isSending ? "Sending" : "Send message");
 
   if (ui.isMenuOpen) {
     if (document.activeElement !== settingsModelInput) {
@@ -161,7 +220,7 @@ const renderUi = () => {
     }
     settingsKeyStatus.textContent = persistState.apiKey
       ? "API key is stored only in this browser."
-      : "No API key — add one via the dialog to send messages.";
+      : 'No API key yet — use "Open setup" in the chat or "Change API key" below.';
     removeApiKeyButton.disabled = !persistState.apiKey || ui.isSending;
     changeApiKeyButton.disabled = ui.isSending;
     saveSettingsButton.disabled = ui.isSending;
@@ -182,96 +241,72 @@ const ensureApiKeyPanel = () => {
 
   panel = document.createElement("div");
   panel.id = "apiKeyPanel";
-  panel.style.position = "fixed";
-  panel.style.inset = "0";
-  panel.style.background = "rgba(15, 23, 42, 0.35)";
-  panel.style.display = "flex";
-  panel.style.alignItems = "center";
-  panel.style.justifyContent = "center";
-  panel.style.zIndex = "100";
+  panel.className = "api-key-overlay";
+  panel.style.display = "none";
 
   const card = document.createElement("div");
-  card.style.background = "#ffffff";
-  card.style.border = "1px solid #e5e7eb";
-  card.style.borderRadius = "12px";
-  card.style.padding = "16px";
-  card.style.width = "min(520px, 92vw)";
+  card.className = "api-key-card";
 
   const title = document.createElement("h2");
-  title.textContent = "Enter your API key";
-  title.style.margin = "0 0 8px 0";
+  title.textContent = "Setup";
 
   const hint = document.createElement("p");
-  hint.textContent = "This key stays in your browser.";
-  hint.style.margin = "0 0 12px 0";
-  hint.style.color = "#4b5563";
+  hint.className = "api-key-lead";
+  hint.textContent = "Your API key never leaves this browser. Pick the model your provider expects.";
 
   const label = document.createElement("label");
+  label.className = "field-label";
+  label.htmlFor = "apiKeyPanelKey";
   label.textContent = "API key";
-  label.style.display = "block";
-  label.style.marginBottom = "6px";
-  label.style.fontWeight = "600";
 
   const input = document.createElement("input");
+  input.id = "apiKeyPanelKey";
   input.type = "password";
   input.autocomplete = "off";
-  input.placeholder = "Paste API key";
-  input.style.width = "100%";
-  input.style.border = "1px solid #d1d5db";
-  input.style.borderRadius = "10px";
-  input.style.padding = "10px";
+  input.placeholder = "Paste key";
+
+  const modelBlock = document.createElement("div");
+  modelBlock.className = "field-block";
 
   const modelLabel = document.createElement("label");
+  modelLabel.className = "field-label";
+  modelLabel.htmlFor = "apiKeyPanelModel";
   modelLabel.textContent = "Model";
-  modelLabel.style.display = "block";
-  modelLabel.style.marginBottom = "6px";
-  modelLabel.style.fontWeight = "600";
-  modelLabel.style.marginTop = "12px";
 
   const modelInput = document.createElement("input");
+  modelInput.id = "apiKeyPanelModel";
   modelInput.type = "text";
   modelInput.autocomplete = "off";
   modelInput.dataset.field = "model";
   modelInput.placeholder = "e.g. openai/gpt-4o-mini";
-  modelInput.style.width = "100%";
-  modelInput.style.border = "1px solid #d1d5db";
-  modelInput.style.borderRadius = "10px";
-  modelInput.style.padding = "10px";
+
+  modelBlock.append(modelLabel, modelInput);
 
   const row = document.createElement("div");
-  row.style.display = "flex";
-  row.style.gap = "10px";
-  row.style.marginTop = "12px";
+  row.className = "api-key-actions";
 
   const save = document.createElement("button");
   save.type = "button";
-  save.textContent = "Save key";
-  save.style.background = "#2563eb";
-  save.style.color = "#fff";
-  save.style.border = "none";
-  save.style.borderRadius = "10px";
-  save.style.padding = "10px 14px";
+  save.className = "btn-primary";
+  save.textContent = "Save";
 
   const cancel = document.createElement("button");
   cancel.type = "button";
-  cancel.textContent = "Cancel";
-  cancel.style.background = "#e5e7eb";
-  cancel.style.color = "#1f2937";
-  cancel.style.border = "none";
-  cancel.style.borderRadius = "10px";
-  cancel.style.padding = "10px 14px";
+  cancel.className = "btn-muted";
+  cancel.textContent = "Close";
 
   row.append(save, cancel);
 
   panel.append(card);
-  card.append(title, hint, label, input, modelLabel, modelInput, row);
+  card.append(title, hint, label, input, modelBlock, row);
 
   const persistAndClose = () => {
     const apiKey = input.value.trim();
-    const model = modelInput.value.trim();
+    const modelRaw = modelInput.value.trim();
+    const prev = store.get(persistStateAtom);
+    const model = modelRaw || prev.model.trim();
     if (!apiKey) return;
     if (!model) return;
-    const prev = store.get(persistStateAtom);
     store.set(persistStateAtom, { ...prev, apiKey, model });
     setUi((u) => ({ ...u, apiKeyPanelOpen: false }));
   };
@@ -292,13 +327,12 @@ const renderApiKeyPanelVisibility = () => {
   const h2 = panel.querySelector("h2");
   if (h2) {
     const modelMissing = !persistState.model.trim();
-    if (!persistState.apiKey && modelMissing) h2.textContent = "Enter API key and model";
-    else if (!persistState.apiKey) h2.textContent = "Enter your API key";
-    else if (modelMissing) h2.textContent = "Enter model type";
-    else h2.textContent = "Change API key and model";
+    if (!persistState.apiKey && modelMissing) h2.textContent = "Connect";
+    else if (!persistState.apiKey) h2.textContent = "API key";
+    else if (modelMissing) h2.textContent = "Model";
+    else h2.textContent = "Update connection";
   }
-  const shouldShow =
-    !persistState.apiKey || !persistState.model.trim() || ui.apiKeyPanelOpen;
+  const shouldShow = ui.apiKeyPanelOpen;
   panel.style.display = shouldShow ? "flex" : "none";
 
   if (shouldShow) {
@@ -310,7 +344,7 @@ const renderApiKeyPanelVisibility = () => {
     if (modelInput && persistState.model.trim()) modelInput.value = persistState.model;
 
     if (!persistState.apiKey) {
-      if (input) input.placeholder = "Paste API key";
+      if (input) input.placeholder = "Paste key";
       input?.focus();
       return;
     }
@@ -374,7 +408,13 @@ chatForm.addEventListener("submit", async (event) => {
 
   const persistState = store.get(persistStateAtom);
   if (!persistState.apiKey || !persistState.model.trim()) {
-    renderApiKeyPanelVisibility();
+    if (!persistState.apiKey.trim() && !persistState.model.trim()) {
+      pushUiSystemMessage("Add your API key and model in Menu → Settings, or tap “Open setup” below.");
+    } else if (!persistState.apiKey.trim()) {
+      pushUiSystemMessage("Add an API key in Menu → Settings (or “Open setup”) to send messages.");
+    } else {
+      pushUiSystemMessage("Add a model id in Menu → Settings so the server knows which model to call.");
+    }
     return;
   }
 
@@ -494,6 +534,26 @@ removeApiKeyButton.addEventListener("click", () => {
 recentList.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  const deleteBtn = target.closest("[data-action='delete']");
+  if (deleteBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const item = deleteBtn.closest(".archive-item");
+    if (!(item instanceof HTMLElement)) return;
+    const chatId = item.dataset.chatId;
+    if (!chatId) return;
+    if (!confirm("Remove this chat from your history on this device?")) return;
+    const persistState = store.get(persistStateAtom);
+    store.set(persistStateAtom, {
+      ...persistState,
+      chatState: {
+        ...persistState.chatState,
+        archivedChats: persistState.chatState.archivedChats.filter((c) => c.id !== chatId),
+      },
+    });
+    return;
+  }
 
   const item = target.closest(".archive-item.clickable");
   if (!(item instanceof HTMLElement)) return;

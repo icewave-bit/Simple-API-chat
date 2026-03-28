@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Chat (lightweight)</title>
+<style type="text/css">
+/* Early-2010s chrome + chat shell; -webkit-* for legacy WebKit. */
+* {
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #2c2c2c;
+  background: #b8bfcd;
+}
+
+/* ---- Slide-out menu ---- */
+.menu-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.4);
+  z-index: 90;
+}
+body.menu-open .menu-backdrop {
+  display: block;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 286px;
+  max-width: 88%;
+  height: 100%;
+  z-index: 100;
+  background: #f2f3f5;
+  border-right: 1px solid rgba(0,0,0,0.18);
+  -webkit-box-shadow: 4px 0 16px rgba(0,0,0,0.12);
+  box-shadow: 4px 0 16px rgba(0,0,0,0.12);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  -webkit-transform: translateX(-105%);
+  transform: translateX(-105%);
+  -webkit-transition: -webkit-transform 0.22s ease-out;
+  transition: transform 0.22s ease-out;
+}
+body.menu-open .drawer {
+  -webkit-transform: translateX(0);
+  transform: translateX(0);
+}
+
+.drawer-hd {
+  padding: 11px 12px;
+  overflow: hidden;
+  background: #e8ebf0;
+  background: -webkit-linear-gradient(top, #f4f5f7 0%, #dfe3e9 100%);
+  background: linear-gradient(to bottom, #f4f5f7 0%, #dfe3e9 100%);
+  border-bottom: 1px solid rgba(0,0,0,0.12);
+}
+.drawer-title {
+  float: left;
+  margin: 5px 0 0;
+  font-size: 1.05em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.drawer-done {
+  float: right;
+  padding: 6px 14px;
+  font-size: 0.95em;
+  font-weight: 600;
+  font-family: inherit;
+  color: #1b6dad;
+  background: transparent;
+  border: 1px solid rgba(27,109,173,0.35);
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.drawer-full {
+  clear: both;
+  display: block;
+  margin-top: 10px;
+  font-size: 0.88em;
+  font-weight: 500;
+  color: #1b6dad;
+}
+
+.drawer-body {
+  padding: 10px;
+}
+
+.panel {
+  margin-bottom: 10px;
+  background: #fafbfc;
+  border: 1px solid rgba(0,0,0,0.12);
+  -webkit-border-radius: 8px;
+  border-radius: 8px;
+  -webkit-box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.panel-hd {
+  padding: 7px 10px;
+  font-size: 0.68em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5a5f66;
+  background: #e8ebf0;
+  background: -webkit-linear-gradient(top, #f0f2f5 0%, #e1e5eb 100%);
+  background: linear-gradient(to bottom, #f0f2f5 0%, #e1e5eb 100%);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+.panel-bd { padding: 10px; }
+
+.hint {
+  margin: 0 0 8px;
+  font-size: 0.82em;
+  color: #5c6370;
+  line-height: 1.35;
+}
+label.lbl {
+  display: block;
+  margin: 8px 0 3px;
+  font-size: 0.76em;
+  font-weight: 600;
+  color: #4a4f56;
+}
+.lbl:first-of-type { margin-top: 0; }
+
+input.inp, textarea.inp {
+  width: 100%;
+  margin: 0;
+  padding: 8px 9px;
+  font-size: 16px;
+  font-family: inherit;
+  color: #222;
+  border: 1px solid #a8b0bd;
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  background: #fff;
+  -webkit-box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+}
+textarea.inp { min-height: 3.2em; resize: vertical; }
+input.inp:focus, textarea.inp:focus {
+  outline: none;
+  border-color: #6b9bd2;
+}
+
+.btn-row { margin-top: 10px; overflow: hidden; }
+.btn {
+  display: inline-block;
+  margin: 0 6px 0 0;
+  padding: 7px 12px;
+  font-size: 0.88em;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.14);
+  -webkit-box-shadow: 0 1px 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.35);
+  box-shadow: 0 1px 1px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.btn-primary {
+  color: #fff;
+  text-shadow: 0 -1px 0 rgba(0,0,0,0.2);
+  border-color: #2a6fbd;
+  background: #4a90d9;
+  background: -webkit-linear-gradient(top, #5c9ee0 0%, #3a7ec8 100%);
+  background: linear-gradient(to bottom, #5c9ee0 0%, #3a7ec8 100%);
+}
+.btn-secondary {
+  color: #333;
+  background: #eceff3;
+  background: -webkit-linear-gradient(top, #f5f7fa 0%, #dfe4ea 100%);
+  background: linear-gradient(to bottom, #f5f7fa 0%, #dfe4ea 100%);
+}
+.btn-ghost {
+  color: #8b4548;
+  background: #fcf0f0;
+  border-color: #d4a8a8;
+}
+.btn-sm { padding: 4px 9px; font-size: 0.78em; }
+.btn[disabled], input[type="submit"][disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.arch-toolbar { margin-bottom: 6px; }
+ul.arch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #d8dce2;
+}
+ul.arch li.arch-row {
+  padding: 7px 0;
+  border-bottom: 1px solid #e4e7ec;
+  font-size: 0.86em;
+  overflow: hidden;
+}
+.arch-title {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #2c3036;
+}
+.arch-actions .btn { margin-right: 5px; }
+
+/* ---- Chat shell (single view) ---- */
+.chat-shell {
+  position: relative;
+  height: 100%;
+  max-width: 40em;
+  margin: 0 auto;
+  background: #c5cddb;
+  background: -webkit-linear-gradient(top, #d4d9e3 0%, #b9c0ce 100%);
+  background: linear-gradient(to bottom, #d4d9e3 0%, #b9c0ce 100%);
+}
+
+.chat-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 46px;
+  z-index: 40;
+  padding: 0 8px;
+  overflow: hidden;
+  line-height: 46px;
+  background: #f6f7f9;
+  background: -webkit-linear-gradient(top, #fafbfc 0%, #e8eaef 100%);
+  background: linear-gradient(to bottom, #fafbfc 0%, #e8eaef 100%);
+  border-bottom: 1px solid rgba(0,0,0,0.12);
+  -webkit-box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.hb-btn {
+  float: left;
+  width: 40px;
+  height: 36px;
+  margin: 5px 6px 0 0;
+  padding: 0;
+  border: 1px solid rgba(0,0,0,0.12);
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  background: #fff;
+  background: -webkit-linear-gradient(top, #fff 0%, #eee 100%);
+  background: linear-gradient(to bottom, #fff 0%, #eee 100%);
+  cursor: pointer;
+  position: relative;
+}
+.hb-btn:active {
+  background: #e5e5e5;
+}
+.hb-icon {
+  display: block;
+  width: 16px;
+  height: 2px;
+  margin: 0 auto;
+  background: #333;
+  -webkit-border-radius: 1px;
+  border-radius: 1px;
+  -webkit-box-shadow: 0 -5px 0 #333, 0 5px 0 #333;
+  box-shadow: 0 -5px 0 #333, 0 5px 0 #333;
+}
+
+.title-wrap {
+  float: left;
+  margin: 3px 0 0 2px;
+  line-height: 1.15;
+}
+.chat-topbar-title {
+  margin: 0;
+  font-size: 1.05em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #1a1a1a;
+}
+.chat-topbar-sub {
+  margin: 1px 0 0;
+  font-size: 0.65em;
+  font-weight: 500;
+  color: #6d6d6d;
+}
+
+.chat-log-wrap {
+  position: absolute;
+  top: 46px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding-bottom: 118px;
+}
+
+.chat-log {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 10px 8px;
+  background: #d1d5de;
+  background: -webkit-linear-gradient(top, #dce0e8 0%, #c8cdd8 40%, #bec4d0 100%);
+  background: linear-gradient(to bottom, #dce0e8 0%, #c8cdd8 40%, #bec4d0 100%);
+}
+
+.msg-row {
+  overflow: hidden;
+  margin: 0 0 10px;
+  clear: both;
+}
+.msg-stack {
+  max-width: 78%;
+}
+.msg-row-user .msg-stack {
+  float: right;
+  text-align: right;
+}
+.msg-row-assistant .msg-stack {
+  float: left;
+  text-align: left;
+}
+.msg-row-system {
+  text-align: center;
+}
+.msg-row-system .msg-stack {
+  float: none;
+  display: inline-block;
+  max-width: 92%;
+  text-align: center;
+}
+.msg-row-system .msg-label,
+.msg-row-system .msg-time {
+  text-align: center;
+}
+
+.msg-label {
+  font-size: 0.62em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a7080;
+  margin: 0 4px 3px;
+}
+.msg-row-user .msg-label { color: #4a6fa0; }
+
+.m {
+  display: inline-block;
+  text-align: left;
+  padding: 9px 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  -webkit-border-radius: 16px;
+  border-radius: 16px;
+  -webkit-box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.msg-row-user .m {
+  -webkit-border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+.msg-row-assistant .m {
+  -webkit-border-bottom-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.m-user {
+  background: #4a90d9;
+  background: -webkit-linear-gradient(top, #5c9ee0 0%, #3d84d0 100%);
+  background: linear-gradient(to bottom, #5c9ee0 0%, #3d84d0 100%);
+  border: 1px solid #2f6ab8;
+  color: #fff;
+  text-shadow: 0 -1px 0 rgba(0,0,0,0.12);
+}
+.m-assistant {
+  background: #fff;
+  border: 1px solid #b8bcc4;
+  color: #222;
+}
+.m-system {
+  font-size: 0.86em;
+  background: #fff8e5;
+  border: 1px solid #e0c97a;
+  color: #5c4a1e;
+}
+
+.msg-time {
+  margin: 3px 6px 0;
+  font-size: 0.62em;
+  color: #6a7080;
+}
+
+.hint.log-empty {
+  margin: 36px 16px;
+  text-align: center;
+  color: #5a6170;
+  font-size: 0.92em;
+  line-height: 1.45;
+  font-style: italic;
+}
+
+/* Bottom composer bar */
+.chat-compose {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 35;
+  padding: 8px 10px 10px;
+  background: #e4e6eb;
+  background: -webkit-linear-gradient(top, #eceef2 0%, #d8dce4 100%);
+  background: linear-gradient(to bottom, #eceef2 0%, #d8dce4 100%);
+  border-top: 1px solid rgba(0,0,0,0.12);
+  -webkit-box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+}
+
+.chat-err {
+  margin: 0 0 6px;
+  min-height: 1.2em;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: #a82a2a;
+  text-align: center;
+}
+
+.compose-row {
+  overflow: hidden;
+}
+.compose-row .inp {
+  float: left;
+  width: 72%;
+  min-height: 40px;
+  margin-right: 2%;
+  -webkit-border-radius: 8px;
+  border-radius: 8px;
+}
+.compose-row input[type="submit"] {
+  float: right;
+  width: 26%;
+  max-width: 72px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  font-size: 0.95em;
+  font-weight: 700;
+  font-family: inherit;
+  color: #fff;
+  text-shadow: 0 -1px 0 rgba(0,0,0,0.2);
+  border: 1px solid #2a6fbd;
+  -webkit-border-radius: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #4a90d9;
+  background: -webkit-linear-gradient(top, #5c9ee0 0%, #3a7ec8 100%);
+  background: linear-gradient(to bottom, #5c9ee0 0%, #3a7ec8 100%);
+}
+</style>
+</head>
+<body>
+
+<div class="menu-backdrop" id="menu-backdrop"></div>
+
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-hd">
+    <h2 class="drawer-title">Menu</h2>
+    <button type="button" class="drawer-done" id="btn-menu-close">Done</button>
+    <a class="drawer-full" href="/">Open full version</a>
+  </div>
+  <div class="drawer-body">
+    <div class="panel">
+      <div class="panel-hd">Connection</div>
+      <div class="panel-bd">
+        <p class="hint">Saved only on this device (localStorage).</p>
+        <label class="lbl" for="f-key">API key</label>
+        <input class="inp" type="password" id="f-key" autocomplete="off">
+        <label class="lbl" for="f-model">Model</label>
+        <input class="inp" type="text" id="f-model" autocomplete="off" placeholder="e.g. openai/gpt-4o-mini">
+        <label class="lbl" for="f-sys">Assistant instructions (optional)</label>
+        <textarea class="inp" id="f-sys" rows="2" autocomplete="off" placeholder="Leave empty for default"></textarea>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="btn-save">Save</button>
+          <button type="button" class="btn btn-ghost" id="btn-clear-key">Clear key</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-hd">History</div>
+      <div class="panel-bd">
+        <div class="arch-toolbar">
+          <button type="button" class="btn btn-secondary" id="btn-new">New chat</button>
+        </div>
+        <ul id="arch-list" class="arch"></ul>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div class="chat-shell">
+  <header class="chat-topbar">
+    <button type="button" class="hb-btn" id="btn-menu-open" title="Menu"><span class="hb-icon"></span></button>
+    <div class="title-wrap">
+      <h2 class="chat-topbar-title">Messages</h2>
+      <p class="chat-topbar-sub">AI Chat · lightweight</p>
+    </div>
+  </header>
+
+  <div class="chat-log-wrap">
+    <div id="log" class="chat-log" role="log"></div>
+  </div>
+
+  <div class="chat-compose">
+    <div id="err" class="chat-err"></div>
+    <form id="chat-form" action="#">
+      <div class="compose-row">
+        <textarea class="inp" id="f-msg" rows="1" placeholder="Message"></textarea>
+        <input type="submit" id="btn-send" value="Send">
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="text/javascript">
+(function () {
+  var STORAGE_KEY = "ai-chat-legacy-v1";
+
+  var app = {
+    apiKey: "",
+    model: "",
+    systemPrompt: "",
+    chatState: { activeMessages: [], archivedChats: [] }
+  };
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function trim(s) {
+    if (!s) return "";
+    return String(s).replace(/^\s+|\s+$/g, "");
+  }
+
+  function setMenuOpen(open) {
+    var b = document.body;
+    if (open) {
+      b.className = "menu-open";
+      $("drawer").setAttribute("aria-hidden", "false");
+    } else {
+      b.className = "";
+      $("drawer").setAttribute("aria-hidden", "true");
+    }
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    var h = d.getHours();
+    var m = d.getMinutes();
+    var ap = h < 12 ? "AM" : "PM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return h + ":" + (m < 10 ? "0" : "") + m + " " + ap;
+  }
+
+  function defaultApp() {
+    return {
+      apiKey: "",
+      model: "",
+      systemPrompt: "",
+      chatState: { activeMessages: [], archivedChats: [] }
+    };
+  }
+
+  function loadApp() {
+    var o = defaultApp();
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return o;
+      var p = JSON.parse(raw);
+      if (p && typeof p === "object") {
+        if (typeof p.apiKey === "string") o.apiKey = p.apiKey;
+        if (typeof p.model === "string") o.model = p.model;
+        if (typeof p.systemPrompt === "string") o.systemPrompt = p.systemPrompt;
+        if (p.chatState) {
+          o.chatState.activeMessages = Array.isArray(p.chatState.activeMessages)
+            ? p.chatState.activeMessages
+            : [];
+          o.chatState.archivedChats = Array.isArray(p.chatState.archivedChats)
+            ? p.chatState.archivedChats
+            : [];
+        }
+      }
+    } catch (e1) {}
+    return o;
+  }
+
+  function persist() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(app));
+    } catch (e2) {}
+  }
+
+  function setErr(msg) {
+    var el = $("err");
+    while (el.firstChild) el.removeChild(el.firstChild);
+    if (msg) el.appendChild(document.createTextNode(String(msg)));
+  }
+
+  function xhrJson(method, url, bodyObj, done) {
+    var x = new XMLHttpRequest();
+    var body = bodyObj ? JSON.stringify(bodyObj) : null;
+    x.open(method, url, true);
+    x.setRequestHeader("Content-Type", "application/json");
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var data = null;
+      try {
+        if (x.responseText) data = JSON.parse(x.responseText);
+      } catch (e3) {}
+      done(x.status, data);
+    };
+    x.send(body);
+  }
+
+  function applyConnToForm() {
+    $("f-key").value = app.apiKey;
+    $("f-model").value = app.model;
+    $("f-sys").value = app.systemPrompt;
+  }
+
+  function readConnFromForm() {
+    app.apiKey = trim($("f-key").value);
+    app.model = trim($("f-model").value);
+    app.systemPrompt = $("f-sys").value || "";
+  }
+
+  function scrollLogToEnd() {
+    var log = $("log");
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderLog() {
+    var log = $("log");
+    while (log.firstChild) log.removeChild(log.firstChild);
+    var msgs = app.chatState.activeMessages || [];
+    if (msgs.length === 0) {
+      var p = document.createElement("p");
+      p.className = "hint log-empty";
+      p.appendChild(
+        document.createTextNode(
+          "No messages yet. Tap the menu (top left) to add your API key and model, then type a message here."
+        )
+      );
+      log.appendChild(p);
+      return;
+    }
+    for (var j = 0; j < msgs.length; j++) {
+      var m = msgs[j];
+      var role = m.role || "assistant";
+      var row = document.createElement("div");
+      row.className = "msg-row msg-row-" + role;
+
+      var stack = document.createElement("div");
+      stack.className = "msg-stack";
+
+      var lab = document.createElement("div");
+      lab.className = "msg-label";
+      if (role === "user") lab.appendChild(document.createTextNode("You"));
+      else if (role === "system") lab.appendChild(document.createTextNode("Notice"));
+      else lab.appendChild(document.createTextNode("Assistant"));
+
+      var div = document.createElement("div");
+      div.className = "m m-" + role;
+      div.appendChild(document.createTextNode(m.content || ""));
+
+      var tm = document.createElement("div");
+      tm.className = "msg-time";
+      tm.appendChild(document.createTextNode(fmtTime(m.createdAt)));
+
+      stack.appendChild(lab);
+      stack.appendChild(div);
+      stack.appendChild(tm);
+      row.appendChild(stack);
+      log.appendChild(row);
+    }
+    setTimeout(scrollLogToEnd, 0);
+  }
+
+  function renderArchive() {
+    var ul = $("arch-list");
+    while (ul.firstChild) ul.removeChild(ul.firstChild);
+    var arch = app.chatState.archivedChats || [];
+    for (var i = 0; i < arch.length; i++) {
+      var c = arch[i];
+      var li = document.createElement("li");
+      li.className = "arch-row";
+      var title = c.title || "Chat";
+      var tit = document.createElement("span");
+      tit.className = "arch-title";
+      tit.appendChild(document.createTextNode(title));
+      li.appendChild(tit);
+      var bo = document.createElement("button");
+      bo.type = "button";
+      bo.className = "btn btn-secondary btn-sm";
+      bo.appendChild(document.createTextNode("Open"));
+      (function (id) {
+        bo.onclick = function () {
+          openArchived(id);
+        };
+      })(c.id);
+      var bd = document.createElement("button");
+      bd.type = "button";
+      bd.className = "btn btn-ghost btn-sm";
+      bd.appendChild(document.createTextNode("Delete"));
+      (function (id) {
+        bd.onclick = function () {
+          deleteArchived(id);
+        };
+      })(c.id);
+      var act = document.createElement("div");
+      act.className = "arch-actions";
+      act.appendChild(bo);
+      act.appendChild(bd);
+      li.appendChild(act);
+      ul.appendChild(li);
+    }
+  }
+
+  function renderAll() {
+    applyConnToForm();
+    renderLog();
+    renderArchive();
+  }
+
+  function saveConn() {
+    readConnFromForm();
+    persist();
+    setErr("");
+    renderAll();
+  }
+
+  function clearKey() {
+    if (!window.confirm("Clear API key from this device?")) return;
+    app.apiKey = "";
+    $("f-key").value = "";
+    persist();
+    setErr("");
+  }
+
+  function newChat() {
+    setErr("");
+    xhrJson("POST", "/api/chat/archive", { state: app.chatState }, function (status, data) {
+      if (status < 200 || status >= 300) {
+        setErr((data && data.error) || "Could not start new chat.");
+        return;
+      }
+      app.chatState = {
+        activeMessages: data.activeMessages || [],
+        archivedChats: data.archivedChats || []
+      };
+      persist();
+      renderAll();
+      setMenuOpen(false);
+    });
+  }
+
+  function openArchived(chatId) {
+    setErr("");
+    xhrJson(
+      "POST",
+      "/api/chat/open",
+      { chatId: chatId, state: app.chatState },
+      function (status, data) {
+        if (status < 200 || status >= 300) {
+          setErr((data && data.error) || "Could not open chat.");
+          return;
+        }
+        app.chatState = {
+          activeMessages: data.activeMessages || [],
+          archivedChats: data.archivedChats || []
+        };
+        persist();
+        renderAll();
+        setMenuOpen(false);
+      }
+    );
+  }
+
+  function deleteArchived(chatId) {
+    if (!window.confirm("Delete this chat from this device?")) return;
+    var next = [];
+    var arch = app.chatState.archivedChats || [];
+    for (var i = 0; i < arch.length; i++) {
+      if (arch[i].id !== chatId) next.push(arch[i]);
+    }
+    app.chatState.archivedChats = next;
+    persist();
+    renderAll();
+  }
+
+  function onSubmit(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    else if (window.event) window.event.returnValue = false;
+    setErr("");
+    readConnFromForm();
+    if (!app.apiKey || !app.model) {
+      setErr("Open the menu and save your API key and model first.");
+      return false;
+    }
+    var text = trim($("f-msg").value);
+    if (!text) return false;
+    var btn = $("btn-send");
+    btn.disabled = true;
+    xhrJson(
+      "POST",
+      "/api/chat",
+      {
+        apiKey: app.apiKey,
+        message: text,
+        model: app.model,
+        systemPrompt: app.systemPrompt,
+        state: app.chatState
+      },
+      function (status, data) {
+        btn.disabled = false;
+        if (status < 200 || status >= 300) {
+          setErr((data && data.error) || "Request failed.");
+          return;
+        }
+        if (data && data.state) {
+          app.chatState = data.state;
+          persist();
+          $("f-msg").value = "";
+          renderLog();
+          renderArchive();
+        } else {
+          setErr("Bad response from server.");
+        }
+      }
+    );
+    return false;
+  }
+
+  function init() {
+    app = loadApp();
+    $("btn-save").onclick = saveConn;
+    $("btn-clear-key").onclick = clearKey;
+    $("btn-new").onclick = newChat;
+    $("chat-form").onsubmit = onSubmit;
+    $("btn-menu-open").onclick = function () {
+      setMenuOpen(true);
+    };
+    $("btn-menu-close").onclick = function () {
+      setMenuOpen(false);
+    };
+    $("menu-backdrop").onclick = function () {
+      setMenuOpen(false);
+    };
+    renderAll();
+  }
+
+  if (document.addEventListener) {
+    document.addEventListener("DOMContentLoaded", init, false);
+  } else {
+    window.onload = init;
+  }
+})();
+</script>
+</body>
+</html>

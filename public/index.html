@@ -10,7 +10,9 @@
     <aside id="sideMenu" class="side-menu" aria-label="Chat menu">
       <div class="side-menu-header">
         <h2>Menu</h2>
-        <button id="closeMenuButton" class="icon-button" type="button" aria-label="Close menu">✕</button>
+        <button id="closeMenuButton" class="icon-button icon-button-ghost" type="button" aria-label="Close menu">
+          <span aria-hidden="true">✕</span>
+        </button>
       </div>
 
       <section class="side-menu-settings" aria-labelledby="settingsHeading">
@@ -27,8 +29,7 @@
         />
         <label class="settings-label" for="settingsSystemPrompt">Assistant instructions</label>
         <p class="settings-hint settings-hint-tight">
-          Optional system prompt sent with every message. Leave empty to use the app default (same idea as:
-          “You are a concise, friendly assistant in a web chat app. Keep answers clear and helpful.”).
+          Optional. Leave empty for the built‑in preset (concise, friendly web assistant).
         </p>
         <textarea
           id="settingsSystemPrompt"
@@ -49,6 +50,8 @@
         </div>
       </section>
 
+      <p class="legacy-nav"><a href="/legacy" class="legacy-nav-link">Legacy / lightweight page</a></p>
+
       <h3 class="side-menu-subheading">Recent chats</h3>
       <ul id="recentList" class="archive-list"></ul>
     </aside>
@@ -56,27 +59,38 @@
 
     <main class="chat-layout" aria-label="Chat application">
       <header class="chat-header">
-        <button id="menuButton" class="icon-button" type="button" aria-label="Open menu">☰</button>
-        <div>
-          <h1>AI Chat</h1>
-          <p>Simple and friendly assistant chat</p>
+        <button id="menuButton" class="icon-button" type="button" aria-label="Open menu">
+          <span class="icon-menu" aria-hidden="true"></span>
+        </button>
+        <div class="chat-header-brand">
+          <h1 class="chat-title">AI Chat</h1>
+          <p class="chat-tagline">Assistant in your browser</p>
         </div>
-        <button id="newChatButton" type="button" class="secondary-button">New chat</button>
+        <button id="newChatButton" type="button" class="header-action-btn" aria-label="New chat">
+          <span class="header-action-icon" aria-hidden="true">+</span>
+          <span class="header-action-text">New</span>
+        </button>
       </header>
 
       <section id="chatLog" class="chat-log" aria-live="polite"></section>
 
-      <form id="chatForm" class="chat-form">
-        <label class="sr-only" for="messageInput">Type your message</label>
-        <textarea
-          id="messageInput"
-          name="message"
-          placeholder="Ask anything..."
-          rows="2"
-          required
-        ></textarea>
-        <button id="sendButton" type="submit">Send</button>
-      </form>
+      <div id="composerWrap" class="composer-wrap">
+        <form id="chatForm" class="chat-form">
+          <label class="sr-only" for="messageInput">Type your message</label>
+          <div class="composer-field">
+            <textarea
+              id="messageInput"
+              name="message"
+              placeholder="Message…"
+              rows="1"
+              required
+            ></textarea>
+            <button id="sendButton" type="submit" class="send-fab" aria-label="Send message">
+              <span aria-hidden="true">↑</span>
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
 
     <script src="/app.js" defer></script>
