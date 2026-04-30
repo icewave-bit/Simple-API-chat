@@ -33,6 +33,11 @@ let db: any = null;
 let isHydrating = true;
 let persistTimer: number | undefined;
 
+const resizeMessageInput = () => {
+  messageInput.style.height = "auto";
+  messageInput.style.height = `${messageInput.scrollHeight}px`;
+};
+
 const appendMessage = (message: ChatMessage) => {
   const bubble = document.createElement("article");
   bubble.className = `message ${message.role}`;
@@ -382,6 +387,7 @@ const boot = async () => {
 
   renderAll();
   renderApiKeyPanelVisibility();
+  resizeMessageInput();
 };
 
 // Persist changes (chatState + apiKey). Transient UI messages are not included.
@@ -399,6 +405,8 @@ store.sub(uiAtom, () => {
   renderUi();
   renderApiKeyPanelVisibility();
 });
+
+messageInput.addEventListener("input", resizeMessageInput);
 
 chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -449,6 +457,7 @@ chatForm.addEventListener("submit", async (event) => {
     }
 
     messageInput.value = "";
+    resizeMessageInput();
   } catch {
     pushUiSystemMessage("Network error. Please try again.");
   } finally {

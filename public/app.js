@@ -3100,6 +3100,10 @@ CREATE TABLE IF NOT EXISTS settings (
       var db = null;
       var isHydrating = true;
       var persistTimer;
+      var resizeMessageInput = () => {
+        messageInput.style.height = "auto";
+        messageInput.style.height = `${messageInput.scrollHeight}px`;
+      };
       var appendMessage = (message) => {
         const bubble = document.createElement("article");
         bubble.className = `message ${message.role}`;
@@ -3369,6 +3373,7 @@ CREATE TABLE IF NOT EXISTS settings (
         store.set(persistStateAtom, loaded);
         renderAll();
         renderApiKeyPanelVisibility();
+        resizeMessageInput();
       };
       store.sub(persistStateAtom, () => {
         const persistState = store.get(persistStateAtom);
@@ -3383,6 +3388,7 @@ CREATE TABLE IF NOT EXISTS settings (
         renderUi();
         renderApiKeyPanelVisibility();
       });
+      messageInput.addEventListener("input", resizeMessageInput);
       chatForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const message = messageInput.value.trim();
@@ -3424,6 +3430,7 @@ CREATE TABLE IF NOT EXISTS settings (
             store.set(persistStateAtom, { ...store.get(persistStateAtom), chatState: nextChatState });
           }
           messageInput.value = "";
+          resizeMessageInput();
         } catch {
           pushUiSystemMessage("Network error. Please try again.");
         } finally {
