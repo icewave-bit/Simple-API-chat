@@ -230,6 +230,11 @@ body {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 0.2rem 0;
 }
 
 .chat-header-brand {
