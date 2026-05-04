@@ -308,18 +308,20 @@ ul.arch li.arch-row {
 }
 
 .chat-log-wrap {
+  /* basis 0% keeps this row viewport-sized; scroll here so old WebKit is not stuck on height:100% on #log */
   -webkit-box-flex: 1;
-  -webkit-flex: 1;
-  flex: 1;
+  -webkit-flex: 1 1 0%;
+  flex: 1 1 0%;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
 }
 
 .chat-log {
-  height: 100%;
-  max-height: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-height: 100%;
+  overflow: visible;
   padding: 12px 10px 8px;
   background: #d1d5de;
   background: -webkit-linear-gradient(top, #dce0e8 0%, #c8cdd8 40%, #bec4d0 100%);
@@ -701,7 +703,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
     </div>
   </header>
 
-  <div class="chat-log-wrap">
+  <div class="chat-log-wrap" id="log-wrap">
     <div id="log" class="chat-log" role="log"></div>
   </div>
 
@@ -889,8 +891,13 @@ html.tiny-legacy body.compose-focus .chat-compose {
   }
 
   function scrollLogToEnd() {
+    var wrap = $("log-wrap");
+    if (wrap) {
+      wrap.scrollTop = wrap.scrollHeight;
+      return;
+    }
     var log = $("log");
-    log.scrollTop = log.scrollHeight;
+    if (log) log.scrollTop = log.scrollHeight;
   }
 
   function renderLog() {
