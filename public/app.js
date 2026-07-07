@@ -3104,11 +3104,42 @@ CREATE TABLE IF NOT EXISTS settings (
         messageInput.style.height = "auto";
         messageInput.style.height = `${messageInput.scrollHeight}px`;
       };
+      var COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+      var COPIED_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+      var createMessageCopyButton = (content) => {
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "message-copy";
+        copyBtn.setAttribute("aria-label", "Copy message");
+        copyBtn.innerHTML = COPY_ICON;
+        let resetTimer;
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(content);
+            copyBtn.setAttribute("aria-label", "Copied");
+            copyBtn.classList.add("message-copy--done");
+            copyBtn.innerHTML = COPIED_ICON;
+            if (resetTimer !== void 0) window.clearTimeout(resetTimer);
+            resetTimer = window.setTimeout(() => {
+              copyBtn.setAttribute("aria-label", "Copy message");
+              copyBtn.classList.remove("message-copy--done");
+              copyBtn.innerHTML = COPY_ICON;
+              resetTimer = void 0;
+            }, 1500);
+          } catch {
+            copyBtn.setAttribute("aria-label", "Copy failed");
+          }
+        });
+        return copyBtn;
+      };
       var appendMessage = (message) => {
+        const wrap = document.createElement("div");
+        wrap.className = `message-wrap ${message.role}`;
         const bubble = document.createElement("article");
         bubble.className = `message ${message.role}`;
         bubble.textContent = message.content;
-        chatLog.appendChild(bubble);
+        wrap.append(bubble, createMessageCopyButton(message.content));
+        chatLog.appendChild(wrap);
       };
       var appendOnboardingCard = () => {
         const card = document.createElement("article");

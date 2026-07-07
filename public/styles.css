@@ -273,8 +273,30 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.message {
+.message-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
   max-width: min(92%, 34rem);
+}
+
+.message-wrap.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-wrap.assistant {
+  align-self: flex-start;
+}
+
+.message-wrap.system {
+  align-self: center;
+  max-width: 100%;
+}
+
+.message {
+  flex: 1;
+  min-width: 0;
   padding: 0.55rem 0.75rem;
   border-radius: var(--radius-md);
   white-space: pre-wrap;
@@ -284,7 +306,6 @@ body {
 }
 
 .message.user {
-  align-self: flex-end;
   background: var(--user-bubble);
   color: #fff;
   border-bottom-right-radius: 0.35rem;
@@ -292,11 +313,61 @@ body {
 }
 
 .message.assistant {
-  align-self: flex-start;
   background: var(--assistant-bg);
   color: var(--text);
   border-bottom-left-radius: 0.35rem;
   border: 1px solid var(--border);
+}
+
+.message-copy {
+  flex-shrink: 0;
+  margin-top: 0.3rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.message-wrap:hover .message-copy,
+.message-copy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-copy:hover {
+  color: var(--text);
+  background: var(--assistant-bg);
+}
+
+.message-copy--done {
+  color: var(--accent);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.message-wrap.user .message-copy {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.message-wrap.user .message-copy:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.message-wrap.user .message-copy--done {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
 }
 
 .message.onboarding {
@@ -329,8 +400,6 @@ body {
 }
 
 .message.system {
-  align-self: center;
-  max-width: 100%;
   background: var(--system-bg);
   color: var(--text);
   border: 1px solid var(--border);
