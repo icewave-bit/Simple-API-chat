@@ -26,25 +26,14 @@ body {
   background: #b8bfcd;
 }
 
-#app-viewport {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  overflow: hidden;
-  z-index: 0;
-}
-
 /* ---- Slide-out menu ---- */
 .menu-backdrop {
   display: none;
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100%;
+  height: 100%;
   background: rgba(0,0,0,0.4);
   z-index: 90;
 }
@@ -53,12 +42,12 @@ body.menu-open .menu-backdrop {
 }
 
 .drawer {
-  position: absolute;
+  position: fixed;
   top: 0;
-  bottom: 0;
   left: 0;
   width: 286px;
   max-width: 88%;
+  height: 100%;
   z-index: 100;
   background: #f2f3f5;
   border-right: 1px solid rgba(0,0,0,0.18);
@@ -70,8 +59,6 @@ body.menu-open .menu-backdrop {
   transform: translateX(-105%);
   -webkit-transition: -webkit-transform 0.22s ease-out;
   transition: transform 0.22s ease-out;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
 }
 body.menu-open .drawer {
   -webkit-transform: translateX(0);
@@ -241,12 +228,8 @@ ul.arch li.arch-row {
 
 /* ---- Chat shell (single view) ---- */
 .chat-shell {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: 100%;
+  position: relative;
+  height: 100%;
   max-width: 40em;
   margin: 0 auto;
   display: -webkit-box;
@@ -711,8 +694,6 @@ html.tiny-legacy body.compose-focus .chat-compose {
 </head>
 <body>
 
-<div id="app-viewport">
-
 <div class="menu-backdrop" id="menu-backdrop"></div>
 
 <aside class="drawer" id="drawer" aria-hidden="true">
@@ -774,14 +755,10 @@ html.tiny-legacy body.compose-focus .chat-compose {
   </div>
 </div>
 
-</div>
-
 <script src="/legacy-models.js"></script>
 <script type="text/javascript">
 (function () {
   var STORAGE_KEY = "ai-chat-legacy-v1";
-  var stableViewportHeight = 0;
-  var viewportSyncTimer = null;
 
   var app = {
     apiKey: "",
@@ -833,75 +810,22 @@ html.tiny-legacy body.compose-focus .chat-compose {
     document.body.className = out.join(" ");
   }
 
-  function getLayoutViewportHeight() {
-    var h = window.innerHeight || document.documentElement.clientHeight || 0;
-    if (h > stableViewportHeight) stableViewportHeight = h;
-    if (h < 160) h = stableViewportHeight || 480;
-    return h;
-  }
-
-  function pinPageScroll() {
-    window.scrollTo(0, 0);
-    if (document.body) document.body.scrollTop = 0;
-    if (document.documentElement) document.documentElement.scrollTop = 0;
-  }
-
-  function syncViewportLayout(pinScroll) {
-    var vp = $("app-viewport");
-    var h = getLayoutViewportHeight();
-    if (vp && h > 0) vp.style.height = h + "px";
-    if (pinScroll) pinPageScroll();
-    updateTinyLegacyClass();
-  }
-
-  function recoverAfterKeyboardClose() {
-    window.setTimeout(function () {
-      syncViewportLayout(true);
-    }, 100);
-    window.setTimeout(function () {
-      syncViewportLayout(true);
-    }, 350);
-  }
-
-  function ensureComposerVisible() {
-    syncViewportLayout(false);
-    var msgEl = $("f-msg");
-    var compose = document.querySelector(".chat-compose");
-    if (msgEl && msgEl.scrollIntoView) {
-      msgEl.scrollIntoView(false);
-    } else if (compose && compose.scrollIntoView) {
-      compose.scrollIntoView(false);
-    }
-  }
-
-  function scheduleComposerVisible() {
-    ensureComposerVisible();
-    window.setTimeout(ensureComposerVisible, 100);
-    window.setTimeout(ensureComposerVisible, 300);
-  }
-
-  function dismissComposerFocus() {
-    bodyRemoveClass("compose-focus");
-    var msgEl = $("f-msg");
-    if (msgEl && msgEl.blur) msgEl.blur();
-  }
-
   function setMenuOpen(open) {
+    var msgEl = $("f-msg");
     if (open) {
-      dismissComposerFocus();
+      if (msgEl && msgEl.blur) msgEl.blur();
       bodyAddClass("menu-open");
       $("drawer").setAttribute("aria-hidden", "false");
-      syncViewportLayout(true);
     } else {
       bodyRemoveClass("menu-open");
       $("drawer").setAttribute("aria-hidden", "true");
-      syncViewportLayout(true);
     }
   }
 
   function updateTinyLegacyClass() {
-    var h = getLayoutViewportHeight();
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
     var w = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (h < 160) h = 480;
     var html = document.documentElement;
     var tiny = h <= 480 || (w <= 330 && h <= 540);
     var cl = html.className || "";
@@ -1034,7 +958,6 @@ html.tiny-legacy body.compose-focus .chat-compose {
       renderLog();
       renderArchive();
     }
-    recoverAfterKeyboardClose();
   }
 
   function skipTypewriter() {
@@ -1500,8 +1423,6 @@ html.tiny-legacy body.compose-focus .chat-compose {
 
     pendingUserText = text;
     $("f-msg").value = "";
-    dismissComposerFocus();
-    recoverAfterKeyboardClose();
     setChatBusy(true);
     appendUserMessageRow(text);
 
@@ -1540,7 +1461,6 @@ html.tiny-legacy body.compose-focus .chat-compose {
         }
 
         pendingUserText = "";
-        recoverAfterKeyboardClose();
         revealAssistantMessage(assistantText, data);
       }
     );
@@ -1549,38 +1469,21 @@ html.tiny-legacy body.compose-focus .chat-compose {
 
   function init() {
     app = loadApp();
-    syncViewportLayout(true);
+    updateTinyLegacyClass();
     if (window.addEventListener) {
-      window.addEventListener(
-        "resize",
-        function () {
-          if (viewportSyncTimer) window.clearTimeout(viewportSyncTimer);
-          viewportSyncTimer = window.setTimeout(function () {
-            if (bodyHasClass("compose-focus")) {
-              ensureComposerVisible();
-            } else {
-              syncViewportLayout(true);
-            }
-          }, 100);
-        },
-        false
-      );
+      window.addEventListener("resize", updateTinyLegacyClass, false);
       window.addEventListener(
         "orientationchange",
         function () {
-          recoverAfterKeyboardClose();
+          updateTinyLegacyClass();
+          setTimeout(updateTinyLegacyClass, 200);
         },
         false
       );
     } else if (window.attachEvent) {
-      window.attachEvent("onresize", function () {
-        if (bodyHasClass("compose-focus")) ensureComposerVisible();
-        else syncViewportLayout(true);
-      });
+      window.attachEvent("onresize", updateTinyLegacyClass);
     }
-    setTimeout(function () {
-      syncViewportLayout(true);
-    }, 400);
+    setTimeout(updateTinyLegacyClass, 400);
 
     $("btn-save").onclick = saveConn;
     $("btn-clear-key").onclick = clearKey;
@@ -1603,7 +1506,6 @@ html.tiny-legacy body.compose-focus .chat-compose {
           "focus",
           function () {
             bodyAddClass("compose-focus");
-            scheduleComposerVisible();
           },
           false
         );
@@ -1611,18 +1513,15 @@ html.tiny-legacy body.compose-focus .chat-compose {
           "blur",
           function () {
             bodyRemoveClass("compose-focus");
-            recoverAfterKeyboardClose();
           },
           false
         );
       } else {
         msgInput.onfocus = function () {
           bodyAddClass("compose-focus");
-          scheduleComposerVisible();
         };
         msgInput.onblur = function () {
           bodyRemoveClass("compose-focus");
-          recoverAfterKeyboardClose();
         };
       }
     }
