@@ -17,20 +17,22 @@
 
       <section class="side-menu-settings" aria-labelledby="settingsHeading">
         <h3 id="settingsHeading" class="side-menu-subheading">Settings</h3>
-        <label class="settings-label" for="settingsModel">Model</label>
-        <input
-          type="text"
-          id="settingsModel"
-          class="settings-input"
-          name="settingsModel"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="e.g. openai/gpt-4o-mini"
-        />
+        <label class="settings-label" for="savedModelSelect">Model</label>
+        <p class="settings-hint settings-hint-tight">
+          Only models with a saved API key appear here. Add a model to connect a key.
+        </p>
+        <select id="savedModelSelect" class="settings-input" name="savedModelSelect"></select>
+        <div class="settings-model-actions">
+          <button type="button" id="addModelButton" class="secondary-button">Add model</button>
+          <button type="button" id="removeModelButton" class="danger-button">Remove model</button>
+        </div>
+        <p id="settingsKeyStatus" class="settings-hint"></p>
         <label class="settings-label" for="settingsSystemPrompt">Assistant instructions</label>
         <p class="settings-hint settings-hint-tight">
           Optional. Leave empty for the built‑in preset (concise, friendly web assistant).
         </p>
+        <label class="settings-label" for="instructionPresetSelect">Saved presets</label>
+        <select id="instructionPresetSelect" class="settings-input" name="instructionPresetSelect"></select>
         <textarea
           id="settingsSystemPrompt"
           class="settings-textarea"
@@ -40,14 +42,26 @@
           spellcheck="true"
           placeholder="Your instructions (or leave empty for built‑in preset)"
         ></textarea>
+        <div class="settings-preset-actions">
+          <input
+            type="text"
+            id="instructionPresetName"
+            class="settings-input settings-preset-name"
+            name="instructionPresetName"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Preset name"
+          />
+          <button type="button" id="saveInstructionPresetButton" class="secondary-button">
+            Save preset
+          </button>
+          <button type="button" id="deleteInstructionPresetButton" class="danger-button">
+            Delete preset
+          </button>
+        </div>
         <button type="button" id="saveSettingsButton" class="secondary-button settings-row-button">
           Save settings
         </button>
-        <p id="settingsKeyStatus" class="settings-hint"></p>
-        <div class="settings-key-actions">
-          <button type="button" id="changeApiKeyButton" class="secondary-button">Change API key</button>
-          <button type="button" id="removeApiKeyButton" class="danger-button">Remove API key</button>
-        </div>
       </section>
 
       <p class="legacy-nav"><a href="/legacy" class="legacy-nav-link">Legacy / lightweight page</a></p>

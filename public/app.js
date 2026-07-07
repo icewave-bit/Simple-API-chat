@@ -748,23 +748,228 @@
     }
   });
 
+  // public/instructionPresets.ts
+  var BUILTIN_PRESET_ID, createPresetId, parseInstructionPresets, serializeInstructionPresets, findPresetById, findPresetByName, resolveSelectedPresetId;
+  var init_instructionPresets = __esm({
+    "public/instructionPresets.ts"() {
+      BUILTIN_PRESET_ID = "__builtin__";
+      createPresetId = () => typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `preset-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      parseInstructionPresets = (raw) => {
+        if (!raw.trim()) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [];
+          return parsed.map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const record = item;
+            const id = typeof record.id === "string" ? record.id.trim() : "";
+            const name = typeof record.name === "string" ? record.name.trim() : "";
+            const instructions = typeof record.instructions === "string" ? record.instructions : "";
+            if (!id || !name) return null;
+            return { id, name, instructions };
+          }).filter((preset) => preset !== null);
+        } catch {
+          return [];
+        }
+      };
+      serializeInstructionPresets = (presets) => JSON.stringify(presets);
+      findPresetById = (presets, id) => presets.find((preset) => preset.id === id);
+      findPresetByName = (presets, name) => presets.find((preset) => preset.name.toLowerCase() === name.toLowerCase());
+      resolveSelectedPresetId = (systemPrompt, presets, storedId) => {
+        if (storedId === BUILTIN_PRESET_ID) {
+          return systemPrompt.trim() ? null : BUILTIN_PRESET_ID;
+        }
+        if (storedId) {
+          const preset = findPresetById(presets, storedId);
+          if (preset && preset.instructions === systemPrompt) return storedId;
+        }
+        if (!systemPrompt.trim()) return BUILTIN_PRESET_ID;
+        const matchingPreset = presets.find((preset) => preset.instructions === systemPrompt);
+        return matchingPreset?.id ?? null;
+      };
+    }
+  });
+
   // public/state.ts
   var persistStateAtom, uiAtom;
   var init_state = __esm({
     "public/state.ts"() {
       init_vanilla();
+      init_instructionPresets();
       persistStateAtom = atom({
-        apiKey: "",
-        model: "",
+        modelProfiles: [],
+        activeModelId: "",
         systemPrompt: "",
+        instructionPresets: [],
+        selectedPresetId: BUILTIN_PRESET_ID,
         chatState: { activeMessages: [], archivedChats: [] }
       });
       uiAtom = atom({
         isSending: false,
+        isRevealingReply: false,
         uiMessages: [],
         isMenuOpen: false,
-        apiKeyPanelOpen: false
+        apiKeyPanelOpen: false,
+        addModelPanelOpen: false
       });
+    }
+  });
+
+  // public/modelProfiles.ts
+  var parseModelProfiles, serializeModelProfiles, findModelProfile, getActiveModelProfile, formatModelLabel;
+  var init_modelProfiles = __esm({
+    "public/modelProfiles.ts"() {
+      parseModelProfiles = (raw) => {
+        if (!raw.trim()) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [];
+          return parsed.map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const record = item;
+            const modelId = typeof record.modelId === "string" ? record.modelId.trim() : "";
+            const apiKey = typeof record.apiKey === "string" ? record.apiKey : "";
+            if (!modelId || !apiKey) return null;
+            return { modelId, apiKey };
+          }).filter((profile) => profile !== null);
+        } catch {
+          return [];
+        }
+      };
+      serializeModelProfiles = (profiles) => JSON.stringify(profiles);
+      findModelProfile = (profiles, modelId) => profiles.find((profile) => profile.modelId === modelId);
+      getActiveModelProfile = (profiles, activeModelId) => findModelProfile(profiles, activeModelId);
+      formatModelLabel = (modelId) => {
+        const slash = modelId.indexOf("/");
+        if (slash === -1) return modelId;
+        const provider = modelId.slice(0, slash);
+        const name = modelId.slice(slash + 1);
+        return `${name} (${provider})`;
+      };
+    }
+  });
+
+  // public/vsellmCatalog.ts
+  var VSELLM_TEXT_MODELS, PROVIDER_LABELS, getVsellmProviderLabel, getVsellmCatalogEntry, formatVsellmModelOptionLabel, compareVsellmCatalogEntries, getSortedTextModels;
+  var init_vsellmCatalog = __esm({
+    "public/vsellmCatalog.ts"() {
+      VSELLM_TEXT_MODELS = [
+        { id: "qwen/qwen3.5-flash", name: "Qwen: Qwen3.5-Flash", provider: "qwen" },
+        { id: "anthropic/claude-opus-4.8", name: "Anthropic: Claude Opus 4.8", provider: "anthropic" },
+        { id: "qwen/qwen3-235b-a22b", name: "Qwen: Qwen3 235B A22B", provider: "qwen" },
+        { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", provider: "anthropic" },
+        { id: "meta-llama/llama-3.3-70b-instruct", name: "Meta: Llama 3.3 70B Instruct", provider: "meta-llama" },
+        { id: "anthropic/claude-opus-4.6", name: "Anthropic: Claude Opus 4.6", provider: "anthropic" },
+        { id: "openai/gpt-5.4", name: "OpenAI: GPT-5.4", provider: "openai" },
+        { id: "z-ai/glm-4.6v", name: "Z.AI: GLM 4.6V", provider: "z-ai" },
+        { id: "z-ai/glm-4.6v-flash", name: "Z.AI: GLM 4.6V Flash", provider: "z-ai" },
+        { id: "qwen/qwen3-vl-30b-a3b-thinking", name: "Qwen: Qwen3 VL 30B A3B Thinking", provider: "qwen" },
+        { id: "qwen/qwen3.7-plus", name: "Qwen: Qwen3.7 Plus", provider: "qwen" },
+        { id: "z-ai/glm-5.1", name: "Z.AI: GLM 5.1", provider: "z-ai" },
+        { id: "z-ai/glm-5.2", name: "Z.AI: GLM 5.2", provider: "z-ai" },
+        { id: "moonshotai/kimi-k2.7-code", name: "MoonshotAI: Kimi K2.7 Code", provider: "moonshotai" },
+        { id: "moonshotai/kimi-k2-0905", name: "MoonshotAI: Kimi K2 0905", provider: "moonshotai" },
+        { id: "openai/chatgpt-4o-latest", name: "OpenAI: ChatGPT-4o", provider: "openai" },
+        { id: "openai/gpt-5.2-codex", name: "OpenAI: GPT-5.2-Codex", provider: "openai" },
+        { id: "deepseek/deepseek-v4-flash", name: "DeepSeek: DeepSeek V4 Flash", provider: "deepseek" },
+        { id: "qwen/qwen3-max-thinking", name: "Qwen: Qwen3 Max Thinking", provider: "qwen" },
+        { id: "yandex/gpt5.1-pro", name: "YandexGPT 5.1 Pro", provider: "yandex" },
+        { id: "google/gemini-3-flash-preview", name: "Google: Gemini 3 Flash Preview", provider: "google" },
+        { id: "openai/gpt-5-nano", name: "OpenAI: GPT-5 Nano", provider: "openai" },
+        { id: "openai/gpt-oss-20b", name: "OpenAI: gpt-oss-20b", provider: "openai" },
+        { id: "openai/gpt-5.4-mini", name: "OpenAI: GPT-5.4 Mini", provider: "openai" },
+        { id: "openai/gpt-4.1-mini", name: "OpenAI: GPT-4.1 Mini", provider: "openai" },
+        { id: "anthropic/claude-sonnet-4.5", name: "Anthropic: Claude Sonnet 4.5", provider: "anthropic" },
+        { id: "anthropic/claude-sonnet-4", name: "Anthropic: Claude Sonnet 4", provider: "anthropic" },
+        { id: "openai/gpt-5.4-nano", name: "OpenAI: GPT-5.4 Nano", provider: "openai" },
+        { id: "qwen/qwen3.5-plus", name: "Qwen: Qwen3.5 Plus", provider: "qwen" },
+        { id: "anthropic/claude-sonnet-4.6", name: "Anthropic: Claude Sonnet 4.6", provider: "anthropic" },
+        { id: "google/gemini-3.1-pro-preview-customtools", name: "Google: Gemini 3.1 Pro Preview Custom Tools", provider: "google" },
+        { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o-mini", provider: "openai" },
+        { id: "qwen/qwen3-vl-8b-thinking", name: "Qwen: Qwen3 VL 8B Thinking", provider: "qwen" },
+        { id: "anthropic/claude-haiku-4.5", name: "Anthropic: Claude Haiku 4.5", provider: "anthropic" },
+        { id: "google/gemini-2.5-flash", name: "Google: Gemini 2.5 Flash", provider: "google" },
+        { id: "deepseek/deepseek-v3.2", name: "DeepSeek: DeepSeek V3.2", provider: "deepseek" },
+        { id: "qwen/qwen3-vl-235b-a22b-instruct", name: "Qwen: Qwen3 VL 235B A22B Instruct", provider: "qwen" },
+        { id: "qwen/qwen3-vl-flash", name: "Qwen: Qwen3 VL Flash", provider: "qwen" },
+        { id: "xiaomi/mimo-v2.5", name: "Xiaomi: MiMo-V2.5", provider: "xiaomi" },
+        { id: "google/gemini-2.5-pro", name: "Google: Gemini 2.5 Pro", provider: "google" },
+        { id: "openai/gpt-5-chat", name: "OpenAI: GPT-5 Chat", provider: "openai" },
+        { id: "openai/gpt-5.1", name: "OpenAI: GPT-5.1", provider: "openai" },
+        { id: "openai/gpt-4.1-nano", name: "OpenAI: GPT-4.1 Nano", provider: "openai" },
+        { id: "z-ai/glm-4.5-air", name: "Z.AI: GLM 4.5 Air", provider: "z-ai" },
+        { id: "z-ai/glm-4.7", name: "Z.AI: GLM 4.7", provider: "z-ai" },
+        { id: "qwen/qwen3-vl-30b-a3b-instruct", name: "Qwen: Qwen3 VL 30B A3B Instruct", provider: "qwen" },
+        { id: "xiaomi/mimo-v2.5-pro", name: "Xiaomi: MiMo-V2.5-Pro", provider: "xiaomi" },
+        { id: "openai/gpt-4.1", name: "OpenAI: GPT-4.1", provider: "openai" },
+        { id: "moonshotai/kimi-k2.5", name: "MoonshotAI: Kimi K2.5", provider: "moonshotai" },
+        { id: "qwen/qwen3.6-plus", name: "Qwen: Qwen3.6 Plus", provider: "qwen" },
+        { id: "deepseek/deepseek-r1-distill-llama-70b", name: "DeepSeek-R1-Distill-Llama-70B", provider: "deepseek" },
+        { id: "openai/gpt-5.4-pro", name: "OpenAI: GPT-5.4 Pro", provider: "openai" },
+        { id: "anthropic/claude-opus-4.1", name: "Anthropic: Claude Opus 4.1", provider: "anthropic" },
+        { id: "anthropic/claude-opus-4.7", name: "Anthropic: Claude Opus 4.7", provider: "anthropic" },
+        { id: "openai/gpt-5.3-codex", name: "OpenAI: GPT-5.3-Codex", provider: "openai" },
+        { id: "z-ai/glm-5", name: "Z.AI: GLM 5", provider: "z-ai" },
+        { id: "openai/gpt-5.1-chat", name: "OpenAI: GPT-5.1 Chat", provider: "openai" },
+        { id: "qwen/qwen3-vl-8b-instruct", name: "Qwen: Qwen3 VL 8B Instruct", provider: "qwen" },
+        { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek: DeepSeek V3 0324", provider: "deepseek" },
+        { id: "z-ai/glm-4.6v-flashx", name: "Z.AI: GLM 4.6V FlashX", provider: "z-ai" },
+        { id: "z-ai/glm-4.6", name: "Z.AI: GLM 4.6", provider: "z-ai" },
+        { id: "qwen/qwen3.7-max", name: "Qwen: Qwen3.7 Max", provider: "qwen" },
+        { id: "openai/gpt-5.3-chat", name: "OpenAI: GPT-5.3 Chat", provider: "openai" },
+        { id: "qwen/qwen3-vl-plus", name: "Qwen: Qwen3 VL Plus", provider: "qwen" },
+        { id: "openai/gpt-5-mini", name: "OpenAI: GPT-5 Mini", provider: "openai" },
+        { id: "anthropic/claude-opus-4.5", name: "Anthropic: Claude Opus 4.5", provider: "anthropic" },
+        { id: "qwen/qwen3-coder-next", name: "Qwen: Qwen3 Coder Next", provider: "qwen" },
+        { id: "openai/gpt-5.2-chat", name: "OpenAI: GPT-5.2 Chat", provider: "openai" },
+        { id: "qwen/qwen3-vl-235b-a22b-thinking", name: "Qwen: Qwen3 VL 235B A22B Thinking", provider: "qwen" },
+        { id: "deepseek/deepseek-v3.2-speciale", name: "DeepSeek: DeepSeek V3.2 Speciale", provider: "deepseek" },
+        { id: "moonshotai/kimi-k2.6", name: "MoonshotAI: Kimi K2.6", provider: "moonshotai" },
+        { id: "google/gemini-3.1-flash-lite", name: "Google: Gemini 3.1 Flash Lite", provider: "google" },
+        { id: "deepseek/deepseek-v4-pro", name: "DeepSeek: DeepSeek V4 Pro", provider: "deepseek" },
+        { id: "google/gemini-3.5-flash", name: "Google: Gemini 3.5 Flash", provider: "google" },
+        { id: "qwen/qwen3.6-35b-a3b", name: "Qwen: Qwen3.6-35B-A3B", provider: "qwen" },
+        { id: "yandex/gpt5-pro", name: "YandexGPT 5 Pro", provider: "yandex" },
+        { id: "google/gemini-3.1-pro-preview", name: "Google: Gemini 3.1 Pro Preview", provider: "google" },
+        { id: "openai/gpt-oss-120b", name: "OpenAI: gpt-oss-120b", provider: "openai" },
+        { id: "openai/gpt-5.5", name: "OpenAI: GPT-5.5", provider: "openai" },
+        { id: "qwen/qwen3.6-flash", name: "Qwen: Qwen3.6 Flash", provider: "qwen" },
+        { id: "openai/gpt-5.2", name: "OpenAI: GPT-5.2", provider: "openai" },
+        { id: "z-ai/glm-4.7-flash", name: "Z.AI: GLM 4.7 Flash", provider: "z-ai" },
+        { id: "openai/gpt-5", name: "OpenAI: GPT-5", provider: "openai" },
+        { id: "qwen/qwen3.6-max-preview", name: "Qwen: Qwen3.6 Max Preview", provider: "qwen" },
+        { id: "yandex/gpt5-lite", name: "YandexGPT 5 Lite", provider: "yandex" },
+        { id: "qwen/qwen3.5-397b-a17b", name: "Qwen: Qwen3.5 397B A17B", provider: "qwen" }
+      ];
+      PROVIDER_LABELS = {
+        "anthropic": "Anthropic",
+        "deepseek": "DeepSeek",
+        "google": "Google",
+        "meta-llama": "Meta",
+        "moonshotai": "MoonshotAI",
+        "openai": "OpenAI",
+        "qwen": "Qwen",
+        "xiaomi": "Xiaomi",
+        "yandex": "Yandex",
+        "z-ai": "Z.AI"
+      };
+      getVsellmProviderLabel = (provider) => PROVIDER_LABELS[provider] ?? provider;
+      getVsellmCatalogEntry = (modelId) => VSELLM_TEXT_MODELS.find((entry) => entry.id === modelId);
+      formatVsellmModelOptionLabel = (entry) => entry.name.includes(":") ? entry.name : `${getVsellmProviderLabel(entry.provider)}: ${entry.name}`;
+      compareVsellmCatalogEntries = (a, b) => {
+        const providerCompare = getVsellmProviderLabel(a.provider).localeCompare(
+          getVsellmProviderLabel(b.provider),
+          void 0,
+          { sensitivity: "base" }
+        );
+        if (providerCompare !== 0) return providerCompare;
+        return formatVsellmModelOptionLabel(a).localeCompare(
+          formatVsellmModelOptionLabel(b),
+          void 0,
+          { sensitivity: "base" }
+        );
+      };
+      getSortedTextModels = () => [...VSELLM_TEXT_MODELS].sort(compareVsellmCatalogEntries);
     }
   });
 
@@ -2903,10 +3108,12 @@
   });
 
   // public/sqliteClient.ts
-  var import_sql, LOCAL_STORAGE_DB_KEY, SCHEMA_SQL, encodeBase64, decodeBase64, loadApiKey, loadModel, loadSystemPrompt, loadChatState, initLocalDbAndLoad, savePersistStateToLocalDb;
+  var import_sql, LOCAL_STORAGE_DB_KEY, SCHEMA_SQL, encodeBase64, decodeBase64, loadSetting, loadModelProfiles, loadActiveModelId, loadSystemPrompt, loadInstructionPresets, loadSelectedPresetId, loadChatState, initLocalDbAndLoad, savePersistStateToLocalDb;
   var init_sqliteClient = __esm({
     "public/sqliteClient.ts"() {
       import_sql = __toESM(require_sql_wasm_browser());
+      init_instructionPresets();
+      init_modelProfiles();
       init_sql_wasm_browser();
       LOCAL_STORAGE_DB_KEY = "ai-chat-db-v1";
       SCHEMA_SQL = `
@@ -2941,29 +3148,36 @@ CREATE TABLE IF NOT EXISTS settings (
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         return bytes;
       };
-      loadApiKey = (db) => {
+      loadSetting = (db, key) => {
+        const safeKey = key.replaceAll("'", "''");
         const result = db.exec(
-          "SELECT value FROM settings WHERE key='apiKey' LIMIT 1;"
+          `SELECT value FROM settings WHERE key='${safeKey}' LIMIT 1;`
         );
         const rows = result?.[0]?.values;
         if (!rows || rows.length === 0) return "";
         return String(rows[0]?.[0] ?? "");
       };
-      loadModel = (db) => {
-        const result = db.exec(
-          "SELECT value FROM settings WHERE key='aiModel' LIMIT 1;"
-        );
-        const rows = result?.[0]?.values;
-        if (!rows || rows.length === 0) return "";
-        return String(rows[0]?.[0] ?? "");
+      loadModelProfiles = (db) => {
+        const stored = parseModelProfiles(loadSetting(db, "modelProfiles"));
+        if (stored.length > 0) return stored;
+        const legacyApiKey = loadSetting(db, "apiKey");
+        const legacyModel = loadSetting(db, "aiModel").trim();
+        if (legacyApiKey && legacyModel) {
+          return [{ modelId: legacyModel, apiKey: legacyApiKey }];
+        }
+        return [];
       };
-      loadSystemPrompt = (db) => {
-        const result = db.exec(
-          "SELECT value FROM settings WHERE key='systemPrompt' LIMIT 1;"
-        );
-        const rows = result?.[0]?.values;
-        if (!rows || rows.length === 0) return "";
-        return String(rows[0]?.[0] ?? "");
+      loadActiveModelId = (db, profiles) => {
+        const stored = loadSetting(db, "activeModelId").trim();
+        if (stored && profiles.some((profile) => profile.modelId === stored)) return stored;
+        return profiles[0]?.modelId ?? "";
+      };
+      loadSystemPrompt = (db) => loadSetting(db, "systemPrompt");
+      loadInstructionPresets = (db) => parseInstructionPresets(loadSetting(db, "instructionPresets"));
+      loadSelectedPresetId = (db) => {
+        const value = loadSetting(db, "selectedPresetId").trim();
+        if (!value) return BUILTIN_PRESET_ID;
+        return value;
       };
       loadChatState = (db) => {
         const activeResult = db.exec(
@@ -3007,14 +3221,22 @@ CREATE TABLE IF NOT EXISTS settings (
         });
         const db = storedBase64 && storedBase64.length > 0 ? new SQL.Database(decodeBase64(storedBase64)) : new SQL.Database();
         db.exec(SCHEMA_SQL);
-        const apiKey = loadApiKey(db);
-        const model = loadModel(db);
+        const modelProfiles = loadModelProfiles(db);
+        const activeModelId = loadActiveModelId(db, modelProfiles);
         const systemPrompt = loadSystemPrompt(db);
+        const instructionPresets = loadInstructionPresets(db);
+        const selectedPresetId = resolveSelectedPresetId(
+          systemPrompt,
+          instructionPresets,
+          loadSelectedPresetId(db)
+        );
         const chatState = loadChatState(db);
         const loaded = {
-          apiKey,
-          model,
+          modelProfiles,
+          activeModelId,
           systemPrompt,
+          instructionPresets,
+          selectedPresetId,
           chatState
         };
         return { loaded, db, SQL };
@@ -3023,18 +3245,32 @@ CREATE TABLE IF NOT EXISTS settings (
         db.exec("BEGIN TRANSACTION;");
         db.exec("DELETE FROM chats;");
         db.exec("DELETE FROM messages;");
-        db.exec("DELETE FROM settings WHERE key IN ('apiKey', 'aiModel', 'systemPrompt');");
-        if (persistState.apiKey) {
-          const escaped = persistState.apiKey.replaceAll("'", "''");
-          db.exec(`INSERT INTO settings (key, value) VALUES ('apiKey', '${escaped}');`);
+        db.exec(
+          "DELETE FROM settings WHERE key IN ('apiKey', 'aiModel', 'modelProfiles', 'activeModelId', 'systemPrompt', 'instructionPresets', 'selectedPresetId');"
+        );
+        if (persistState.modelProfiles.length > 0) {
+          const escapedProfiles = serializeModelProfiles(persistState.modelProfiles).replaceAll("'", "''");
+          db.exec(`INSERT INTO settings (key, value) VALUES ('modelProfiles', '${escapedProfiles}');`);
         }
-        if (persistState.model.trim()) {
-          const escapedModel = persistState.model.replaceAll("'", "''");
-          db.exec(`INSERT INTO settings (key, value) VALUES ('aiModel', '${escapedModel}');`);
+        if (persistState.activeModelId.trim()) {
+          const escapedModelId = persistState.activeModelId.replaceAll("'", "''");
+          db.exec(`INSERT INTO settings (key, value) VALUES ('activeModelId', '${escapedModelId}');`);
         }
         if (persistState.systemPrompt.trim()) {
           const escapedSp = persistState.systemPrompt.replaceAll("'", "''");
           db.exec(`INSERT INTO settings (key, value) VALUES ('systemPrompt', '${escapedSp}');`);
+        }
+        if (persistState.instructionPresets.length > 0) {
+          const escapedPresets = serializeInstructionPresets(persistState.instructionPresets).replaceAll(
+            "'",
+            "''"
+          );
+          db.exec(`INSERT INTO settings (key, value) VALUES ('instructionPresets', '${escapedPresets}');`);
+        }
+        const presetId = persistState.selectedPresetId ?? "";
+        if (presetId) {
+          const escapedPresetId = presetId.replaceAll("'", "''");
+          db.exec(`INSERT INTO settings (key, value) VALUES ('selectedPresetId', '${escapedPresetId}');`);
         }
         for (const chat of persistState.chatState.archivedChats) {
           const id = chat.id.replaceAll("'", "''");
@@ -3073,6 +3309,9 @@ CREATE TABLE IF NOT EXISTS settings (
     "public/app.ts"() {
       init_vanilla();
       init_state();
+      init_instructionPresets();
+      init_modelProfiles();
+      init_vsellmCatalog();
       init_sqliteClient();
       var getEl = (id) => {
         const el = document.getElementById(id);
@@ -3089,12 +3328,51 @@ CREATE TABLE IF NOT EXISTS settings (
       var menuButton = getEl("menuButton");
       var closeMenuButton = getEl("closeMenuButton");
       var menuBackdrop = getEl("menuBackdrop");
-      var settingsModelInput = getEl("settingsModel");
+      var savedModelSelect = getEl("savedModelSelect");
+      var addModelButton = getEl("addModelButton");
+      var removeModelButton = getEl("removeModelButton");
       var settingsSystemPromptInput = getEl("settingsSystemPrompt");
+      var instructionPresetSelect = getEl("instructionPresetSelect");
+      var instructionPresetNameInput = getEl("instructionPresetName");
+      var saveInstructionPresetButton = getEl("saveInstructionPresetButton");
+      var deleteInstructionPresetButton = getEl("deleteInstructionPresetButton");
       var saveSettingsButton = getEl("saveSettingsButton");
-      var changeApiKeyButton = getEl("changeApiKeyButton");
-      var removeApiKeyButton = getEl("removeApiKeyButton");
       var settingsKeyStatus = getEl("settingsKeyStatus");
+      var formatSavedModelLabel = (modelId) => {
+        const entry = getVsellmCatalogEntry(modelId);
+        return entry ? formatVsellmModelOptionLabel(entry) : formatModelLabel(modelId);
+      };
+      var populateCatalogModelSelect = (select, selectedId = "") => {
+        select.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose a model";
+        select.append(placeholder);
+        const byProvider = /* @__PURE__ */ new Map();
+        getSortedTextModels().forEach((entry) => {
+          const group = byProvider.get(entry.provider) ?? [];
+          group.push(entry);
+          byProvider.set(entry.provider, group);
+        });
+        [...byProvider.keys()].sort((a, b) => getVsellmProviderLabel(a).localeCompare(getVsellmProviderLabel(b))).forEach((provider) => {
+          const optgroup = document.createElement("optgroup");
+          optgroup.label = getVsellmProviderLabel(provider);
+          (byProvider.get(provider) ?? []).forEach((entry) => {
+            const option = document.createElement("option");
+            option.value = entry.id;
+            option.textContent = formatVsellmModelOptionLabel(entry);
+            optgroup.append(option);
+          });
+          select.append(optgroup);
+        });
+        if (selectedId) select.value = selectedId;
+        select.disabled = false;
+      };
+      var getActiveConnection = (persistState) => getActiveModelProfile(persistState.modelProfiles, persistState.activeModelId);
+      var hasActiveConnection = (persistState) => {
+        const profile = getActiveConnection(persistState);
+        return Boolean(profile?.apiKey && profile.modelId);
+      };
       var store = createStore();
       var dbSQL = null;
       var db = null;
@@ -3141,6 +3419,127 @@ CREATE TABLE IF NOT EXISTS settings (
         wrap.append(bubble, createMessageCopyButton(message.content));
         chatLog.appendChild(wrap);
       };
+      var TYPING_INDICATOR_ID = "assistant-typing-indicator";
+      var scrollChatToEnd = () => {
+        chatLog.scrollTop = chatLog.scrollHeight;
+      };
+      var removeTypingIndicator = () => {
+        document.getElementById(TYPING_INDICATOR_ID)?.remove();
+      };
+      var appendTypingIndicator = () => {
+        removeTypingIndicator();
+        const wrap = document.createElement("div");
+        wrap.id = TYPING_INDICATOR_ID;
+        wrap.className = "message-wrap assistant";
+        const bubble = document.createElement("article");
+        bubble.className = "message assistant typing-indicator";
+        bubble.setAttribute("aria-live", "polite");
+        const label = document.createElement("span");
+        label.className = "typing-indicator-label";
+        label.textContent = "Answering";
+        const dots = document.createElement("span");
+        dots.className = "typing-dots";
+        dots.setAttribute("aria-hidden", "true");
+        for (let i = 0; i < 3; i++) dots.appendChild(document.createElement("span"));
+        bubble.append(label, dots);
+        wrap.append(bubble);
+        chatLog.appendChild(wrap);
+        scrollChatToEnd();
+      };
+      var streamingWrapEl = null;
+      var streamingBubbleEl = null;
+      var clearStreamingBubble = () => {
+        streamingWrapEl?.remove();
+        streamingWrapEl = null;
+        streamingBubbleEl = null;
+      };
+      var ensureStreamingBubble = () => {
+        if (streamingBubbleEl && streamingWrapEl) {
+          return { wrap: streamingWrapEl, bubble: streamingBubbleEl };
+        }
+        removeTypingIndicator();
+        const wrap = document.createElement("div");
+        wrap.className = "message-wrap assistant";
+        const bubble = document.createElement("article");
+        bubble.className = "message assistant is-streaming";
+        bubble.textContent = "";
+        wrap.append(bubble);
+        chatLog.appendChild(wrap);
+        streamingWrapEl = wrap;
+        streamingBubbleEl = bubble;
+        scrollChatToEnd();
+        return { wrap, bubble };
+      };
+      var updateStreamingBubble = (text) => {
+        if (!streamingBubbleEl) {
+          setUi((prev) => ({ ...prev, isRevealingReply: true }));
+          ensureStreamingBubble();
+        }
+        if (streamingBubbleEl) streamingBubbleEl.textContent = text;
+        scrollChatToEnd();
+      };
+      var finalizeStreamingBubble = (fullText) => {
+        if (!streamingWrapEl || !streamingBubbleEl) return;
+        streamingBubbleEl.classList.remove("is-streaming");
+        streamingBubbleEl.textContent = fullText;
+        streamingWrapEl.append(createMessageCopyButton(fullText));
+        streamingWrapEl = null;
+        streamingBubbleEl = null;
+        scrollChatToEnd();
+      };
+      var consumeChatStream = async (response, handlers) => {
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!response.ok || !contentType.includes("text/event-stream")) {
+          const payload = await response.json().catch(() => null);
+          handlers.onError(payload?.error || "Request failed.");
+          return;
+        }
+        const reader = response.body?.getReader();
+        if (!reader) {
+          handlers.onError("Streaming is not supported in this browser.");
+          return;
+        }
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let fullText = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const segments = buffer.split("\n\n");
+          buffer = segments.pop() ?? "";
+          for (const segment of segments) {
+            for (const line of segment.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const raw = line.slice(6).trim();
+              if (!raw) continue;
+              let event;
+              try {
+                event = JSON.parse(raw);
+              } catch {
+                continue;
+              }
+              if (event.type === "delta" && typeof event.content === "string") {
+                fullText += event.content;
+                handlers.onDelta(event.content, fullText);
+                continue;
+              }
+              if (event.type === "error") {
+                handlers.onError(event.error || "Stream failed.");
+                return;
+              }
+              if (event.type === "done" && event.state) {
+                handlers.onDone({
+                  reply: typeof event.reply === "string" ? event.reply : fullText,
+                  state: event.state
+                });
+                return;
+              }
+            }
+          }
+        }
+        handlers.onError("Stream ended without a response.");
+      };
       var appendOnboardingCard = () => {
         const card = document.createElement("article");
         card.className = "message assistant onboarding";
@@ -3150,7 +3549,7 @@ CREATE TABLE IF NOT EXISTS settings (
         const list = document.createElement("ol");
         list.className = "onboarding-steps";
         const step1 = document.createElement("li");
-        step1.textContent = "Open the menu (top-left) \u2192 Settings, and add your API key plus model. Keys stay in this browser only.";
+        step1.textContent = "Open the menu (top-left) \u2192 Settings, and add a model with your API key. Keys stay in this browser only.";
         const step2 = document.createElement("li");
         step2.textContent = "Come back here and type your first message \u2014 no pop-ups unless you open setup yourself.";
         list.append(step1, step2);
@@ -3191,16 +3590,17 @@ CREATE TABLE IF NOT EXISTS settings (
         };
       };
       var renderChat = () => {
-        chatLog.innerHTML = "";
         const persistState = store.get(persistStateAtom);
         const ui = store.get(uiAtom);
+        if (ui.isRevealingReply) return;
+        chatLog.innerHTML = "";
         const { activeMessages } = persistState.chatState;
-        const setupComplete = Boolean(persistState.apiKey.trim() && persistState.model.trim());
+        const setupComplete = hasActiveConnection(persistState);
         if (activeMessages.length === 0) {
           if (setupComplete) {
             appendMessage({
               role: "assistant",
-              content: "Hi \u2014 ask anything. Use the menu for model and key settings.",
+              content: "Hi \u2014 ask anything. Use the menu to switch models or edit instructions.",
               createdAt: (/* @__PURE__ */ new Date()).toISOString()
             });
           } else {
@@ -3210,7 +3610,8 @@ CREATE TABLE IF NOT EXISTS settings (
           activeMessages.forEach(appendMessage);
         }
         ui.uiMessages.forEach(appendMessage);
-        chatLog.scrollTop = chatLog.scrollHeight;
+        if (ui.isSending) appendTypingIndicator();
+        scrollChatToEnd();
       };
       var renderRecent = () => {
         const persistState = store.get(persistStateAtom);
@@ -3259,29 +3660,117 @@ CREATE TABLE IF NOT EXISTS settings (
           recentList.appendChild(item);
         });
       };
+      var renderSavedModelControls = (persistState) => {
+        const ui = store.get(uiAtom);
+        const { modelProfiles, activeModelId } = persistState;
+        savedModelSelect.innerHTML = "";
+        if (modelProfiles.length === 0) {
+          const emptyOption = document.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = "No models yet";
+          savedModelSelect.append(emptyOption);
+          savedModelSelect.value = "";
+        } else {
+          modelProfiles.forEach((profile) => {
+            const option = document.createElement("option");
+            option.value = profile.modelId;
+            option.textContent = formatSavedModelLabel(profile.modelId);
+            savedModelSelect.append(option);
+          });
+          savedModelSelect.value = activeModelId || modelProfiles[0]?.modelId || "";
+        }
+        const activeProfile = getActiveConnection(persistState);
+        settingsKeyStatus.textContent = activeProfile ? `API key for ${formatSavedModelLabel(activeProfile.modelId)} is stored only in this browser.` : "Add a model and API key to start chatting.";
+        removeModelButton.disabled = !activeProfile || ui.isSending;
+        addModelButton.disabled = ui.isSending;
+        savedModelSelect.disabled = modelProfiles.length === 0 || ui.isSending;
+      };
+      var getInstructionDraft = () => document.activeElement === settingsSystemPromptInput ? settingsSystemPromptInput.value : store.get(persistStateAtom).systemPrompt;
+      var resolveDisplayPresetId = (instructions, presets) => {
+        if (!instructions.trim()) return BUILTIN_PRESET_ID;
+        return presets.find((preset) => preset.instructions === instructions)?.id ?? null;
+      };
+      var renderInstructionPresetControls = (persistState) => {
+        const { instructionPresets } = persistState;
+        const instructions = getInstructionDraft();
+        const displayPresetId = resolveDisplayPresetId(instructions, instructionPresets);
+        const activeElement = document.activeElement;
+        const isEditingPresetName = activeElement === instructionPresetNameInput;
+        instructionPresetSelect.innerHTML = "";
+        const customOption = document.createElement("option");
+        customOption.value = "";
+        customOption.textContent = "Custom (unsaved)";
+        instructionPresetSelect.append(customOption);
+        const builtInOption = document.createElement("option");
+        builtInOption.value = BUILTIN_PRESET_ID;
+        builtInOption.textContent = "Built-in default";
+        instructionPresetSelect.append(builtInOption);
+        instructionPresets.forEach((preset) => {
+          const option = document.createElement("option");
+          option.value = preset.id;
+          option.textContent = preset.name;
+          instructionPresetSelect.append(option);
+        });
+        if (displayPresetId === BUILTIN_PRESET_ID) {
+          instructionPresetSelect.value = BUILTIN_PRESET_ID;
+        } else if (displayPresetId) {
+          instructionPresetSelect.value = displayPresetId;
+        } else {
+          instructionPresetSelect.value = "";
+        }
+        const selectedPreset = displayPresetId && displayPresetId !== BUILTIN_PRESET_ID ? findPresetById(instructionPresets, displayPresetId) : void 0;
+        if (!isEditingPresetName) {
+          if (selectedPreset) {
+            instructionPresetNameInput.value = selectedPreset.name;
+          } else if (displayPresetId === BUILTIN_PRESET_ID) {
+            instructionPresetNameInput.value = "";
+          }
+        }
+        const canDelete = Boolean(displayPresetId) && displayPresetId !== BUILTIN_PRESET_ID && Boolean(selectedPreset);
+        deleteInstructionPresetButton.disabled = !canDelete || store.get(uiAtom).isSending;
+        saveInstructionPresetButton.disabled = store.get(uiAtom).isSending;
+        instructionPresetSelect.disabled = store.get(uiAtom).isSending;
+        instructionPresetNameInput.disabled = store.get(uiAtom).isSending;
+      };
+      var applyInstructionPreset = (presetId) => {
+        const persistState = store.get(persistStateAtom);
+        if (presetId === BUILTIN_PRESET_ID) {
+          store.set(persistStateAtom, {
+            ...persistState,
+            systemPrompt: "",
+            selectedPresetId: BUILTIN_PRESET_ID
+          });
+          settingsSystemPromptInput.value = "";
+          return;
+        }
+        if (!presetId) return;
+        const preset = findPresetById(persistState.instructionPresets, presetId);
+        if (!preset) return;
+        store.set(persistStateAtom, {
+          ...persistState,
+          systemPrompt: preset.instructions,
+          selectedPresetId: preset.id
+        });
+        settingsSystemPromptInput.value = preset.instructions;
+      };
       var renderUi = () => {
         const persistState = store.get(persistStateAtom);
         const ui = store.get(uiAtom);
         sideMenu.classList.toggle("open", ui.isMenuOpen);
         menuBackdrop.classList.toggle("hidden", !ui.isMenuOpen);
-        const canSend = Boolean(persistState.apiKey) && Boolean(persistState.model.trim()) && !ui.isSending;
+        const canSend = hasActiveConnection(persistState) && !ui.isSending;
         sendButton.disabled = !canSend;
         messageInput.disabled = ui.isSending;
         newChatButton.disabled = ui.isSending;
         sendButton.setAttribute("aria-busy", ui.isSending ? "true" : "false");
-        sendButton.setAttribute("aria-label", ui.isSending ? "Sending" : "Send message");
+        sendButton.setAttribute("aria-label", ui.isSending ? "Answering" : "Send message");
         if (ui.isMenuOpen) {
-          if (document.activeElement !== settingsModelInput) {
-            settingsModelInput.value = persistState.model;
-          }
+          renderSavedModelControls(persistState);
           if (document.activeElement !== settingsSystemPromptInput) {
             settingsSystemPromptInput.value = persistState.systemPrompt;
           }
-          settingsKeyStatus.textContent = persistState.apiKey ? "API key is stored only in this browser." : 'No API key yet \u2014 use "Open setup" in the chat or "Change API key" below.';
-          removeApiKeyButton.disabled = !persistState.apiKey || ui.isSending;
-          changeApiKeyButton.disabled = ui.isSending;
+          renderInstructionPresetControls(persistState);
           saveSettingsButton.disabled = ui.isSending;
-          settingsModelInput.disabled = ui.isSending;
           settingsSystemPromptInput.disabled = ui.isSending;
         }
       };
@@ -3290,42 +3779,45 @@ CREATE TABLE IF NOT EXISTS settings (
         renderRecent();
         renderUi();
       };
-      var ensureApiKeyPanel = () => {
-        let panel = document.getElementById("apiKeyPanel");
+      var ensureAddModelPanel = () => {
+        let panel = document.getElementById("addModelPanel");
         if (panel) return panel;
         panel = document.createElement("div");
-        panel.id = "apiKeyPanel";
+        panel.id = "addModelPanel";
         panel.className = "api-key-overlay";
         panel.style.display = "none";
         const card = document.createElement("div");
         card.className = "api-key-card";
         const title = document.createElement("h2");
-        title.textContent = "Setup";
+        title.textContent = "Add model";
         const hint = document.createElement("p");
         hint.className = "api-key-lead";
-        hint.textContent = "Your API key never leaves this browser. Pick the model your provider expects.";
-        const label = document.createElement("label");
-        label.className = "field-label";
-        label.htmlFor = "apiKeyPanelKey";
-        label.textContent = "API key";
-        const input = document.createElement("input");
-        input.id = "apiKeyPanelKey";
-        input.type = "password";
-        input.autocomplete = "off";
-        input.placeholder = "Paste key";
+        hint.textContent = "Choose a model from the VseLLM catalog and enter its API key. Each saved model keeps its own key.";
         const modelBlock = document.createElement("div");
         modelBlock.className = "field-block";
         const modelLabel = document.createElement("label");
         modelLabel.className = "field-label";
-        modelLabel.htmlFor = "apiKeyPanelModel";
-        modelLabel.textContent = "Model";
-        const modelInput = document.createElement("input");
-        modelInput.id = "apiKeyPanelModel";
-        modelInput.type = "text";
-        modelInput.autocomplete = "off";
-        modelInput.dataset.field = "model";
-        modelInput.placeholder = "e.g. openai/gpt-4o-mini";
-        modelBlock.append(modelLabel, modelInput);
+        modelLabel.htmlFor = "addModelPanelModel";
+        modelLabel.textContent = "Text model";
+        const modelSelect = document.createElement("select");
+        modelSelect.id = "addModelPanelModel";
+        modelSelect.className = "settings-input";
+        modelSelect.dataset.field = "model";
+        populateCatalogModelSelect(modelSelect);
+        modelBlock.append(modelLabel, modelSelect);
+        const keyLabel = document.createElement("label");
+        keyLabel.className = "field-label";
+        keyLabel.htmlFor = "addModelPanelKey";
+        keyLabel.textContent = "API key";
+        const keyInput = document.createElement("input");
+        keyInput.id = "addModelPanelKey";
+        keyInput.type = "password";
+        keyInput.autocomplete = "off";
+        keyInput.placeholder = "Paste key";
+        const status = document.createElement("p");
+        status.className = "api-key-lead";
+        status.dataset.field = "status";
+        status.textContent = "";
         const row = document.createElement("div");
         row.className = "api-key-actions";
         const save = document.createElement("button");
@@ -3337,50 +3829,72 @@ CREATE TABLE IF NOT EXISTS settings (
         cancel.className = "btn-muted";
         cancel.textContent = "Close";
         row.append(save, cancel);
+        card.append(title, hint, modelBlock, keyLabel, keyInput, status, row);
         panel.append(card);
-        card.append(title, hint, label, input, modelBlock, row);
         const persistAndClose = () => {
-          const apiKey = input.value.trim();
-          const modelRaw = modelInput.value.trim();
+          const apiKey = keyInput.value.trim();
+          const modelId = modelSelect.value.trim();
+          if (!modelId) {
+            status.textContent = "Choose a model from the list.";
+            return;
+          }
+          if (!apiKey) {
+            status.textContent = "API key is required.";
+            return;
+          }
           const prev = store.get(persistStateAtom);
-          const model = modelRaw || prev.model.trim();
-          if (!apiKey) return;
-          if (!model) return;
-          store.set(persistStateAtom, { ...prev, apiKey, model });
-          setUi((u) => ({ ...u, apiKeyPanelOpen: false }));
+          const existingIndex = prev.modelProfiles.findIndex((profile) => profile.modelId === modelId);
+          const nextProfile = { modelId, apiKey };
+          const nextProfiles = existingIndex >= 0 ? prev.modelProfiles.map((profile, index) => index === existingIndex ? nextProfile : profile) : [...prev.modelProfiles, nextProfile];
+          store.set(persistStateAtom, {
+            ...prev,
+            modelProfiles: nextProfiles,
+            activeModelId: modelId
+          });
+          setUi((prevUi) => ({
+            ...prevUi,
+            addModelPanelOpen: false,
+            apiKeyPanelOpen: false
+          }));
         };
         save.addEventListener("click", persistAndClose);
         cancel.addEventListener("click", () => {
-          setUi((u) => ({ ...u, apiKeyPanelOpen: false }));
+          setUi((prev) => ({
+            ...prev,
+            addModelPanelOpen: false,
+            apiKeyPanelOpen: false
+          }));
         });
         document.body.appendChild(panel);
         return panel;
       };
-      var renderApiKeyPanelVisibility = () => {
-        const panel = ensureApiKeyPanel();
+      var renderAddModelPanelVisibility = () => {
+        const panel = ensureAddModelPanel();
         const persistState = store.get(persistStateAtom);
         const ui = store.get(uiAtom);
-        const h2 = panel.querySelector("h2");
-        if (h2) {
-          const modelMissing = !persistState.model.trim();
-          if (!persistState.apiKey && modelMissing) h2.textContent = "Connect";
-          else if (!persistState.apiKey) h2.textContent = "API key";
-          else if (modelMissing) h2.textContent = "Model";
-          else h2.textContent = "Update connection";
-        }
-        const shouldShow = ui.apiKeyPanelOpen;
+        const shouldShow = ui.addModelPanelOpen || ui.apiKeyPanelOpen;
         panel.style.display = shouldShow ? "flex" : "none";
-        if (shouldShow) {
-          const input = panel.querySelector("input[type='password']");
-          const modelInput = panel.querySelector("input[data-field='model']");
-          if (modelInput && persistState.model.trim()) modelInput.value = persistState.model;
-          if (!persistState.apiKey) {
-            if (input) input.placeholder = "Paste key";
-            input?.focus();
-            return;
-          }
-          modelInput?.focus();
+        const title = panel.querySelector("h2");
+        const keyInput = panel.querySelector("input[type='password']");
+        const modelSelect = panel.querySelector("select[data-field='model']");
+        const status = panel.querySelector("p[data-field='status']");
+        if (title) {
+          title.textContent = persistState.modelProfiles.length === 0 ? "Connect" : "Add model";
         }
+        if (shouldShow) {
+          const activeProfile = getActiveConnection(persistState);
+          if (modelSelect) {
+            populateCatalogModelSelect(modelSelect, activeProfile?.modelId ?? "");
+          }
+          if (keyInput && !keyInput.value && activeProfile?.apiKey) {
+            keyInput.value = activeProfile.apiKey;
+          }
+          modelSelect?.focus();
+          return;
+        }
+        if (keyInput) keyInput.value = "";
+        if (status) status.textContent = "";
+        if (modelSelect) populateCatalogModelSelect(modelSelect);
       };
       var schedulePersist = (persistState) => {
         if (isHydrating) return;
@@ -3403,7 +3917,7 @@ CREATE TABLE IF NOT EXISTS settings (
         isHydrating = false;
         store.set(persistStateAtom, loaded);
         renderAll();
-        renderApiKeyPanelVisibility();
+        renderAddModelPanelVisibility();
         resizeMessageInput();
       };
       store.sub(persistStateAtom, () => {
@@ -3412,12 +3926,12 @@ CREATE TABLE IF NOT EXISTS settings (
         renderChat();
         renderRecent();
         renderUi();
-        renderApiKeyPanelVisibility();
+        renderAddModelPanelVisibility();
       });
       store.sub(uiAtom, () => {
         renderChat();
         renderUi();
-        renderApiKeyPanelVisibility();
+        renderAddModelPanelVisibility();
       });
       messageInput.addEventListener("input", resizeMessageInput);
       chatForm.addEventListener("submit", async (event) => {
@@ -3425,47 +3939,68 @@ CREATE TABLE IF NOT EXISTS settings (
         const message = messageInput.value.trim();
         if (!message) return;
         const persistState = store.get(persistStateAtom);
-        if (!persistState.apiKey || !persistState.model.trim()) {
-          if (!persistState.apiKey.trim() && !persistState.model.trim()) {
-            pushUiSystemMessage("Add your API key and model in Menu \u2192 Settings, or tap \u201COpen setup\u201D below.");
-          } else if (!persistState.apiKey.trim()) {
-            pushUiSystemMessage("Add an API key in Menu \u2192 Settings (or \u201COpen setup\u201D) to send messages.");
-          } else {
-            pushUiSystemMessage("Add a model id in Menu \u2192 Settings so the server knows which model to call.");
-          }
+        const activeConnection = getActiveConnection(persistState);
+        if (!activeConnection) {
+          pushUiSystemMessage("Add a model and API key in Menu \u2192 Settings, or tap \u201COpen setup\u201D below.");
           return;
         }
-        setUi((prev) => ({ ...prev, isSending: true, uiMessages: [] }));
+        const userEntry = {
+          role: "user",
+          content: message,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        store.set(persistStateAtom, {
+          ...persistState,
+          chatState: {
+            ...persistState.chatState,
+            activeMessages: [...persistState.chatState.activeMessages, userEntry]
+          }
+        });
+        setUi((prev) => ({ ...prev, isSending: true, isRevealingReply: false, uiMessages: [] }));
+        messageInput.value = "";
+        resizeMessageInput();
         try {
-          const response = await fetch("/api/chat", {
+          const response = await fetch("/api/chat/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              apiKey: persistState.apiKey,
+              apiKey: activeConnection.apiKey,
               message,
-              model: persistState.model.trim(),
+              model: activeConnection.modelId,
               systemPrompt: persistState.systemPrompt.trim(),
-              state: persistState.chatState
+              state: {
+                ...persistState.chatState,
+                activeMessages: persistState.chatState.activeMessages
+              }
             })
           });
-          const payload = await response.json();
-          if (!response.ok) {
-            pushUiSystemMessage(payload.error || "Request failed.");
-            return;
-          }
-          if (payload.state?.activeMessages) {
-            const nextChatState = {
-              activeMessages: Array.isArray(payload.state.activeMessages) ? payload.state.activeMessages : [],
-              archivedChats: Array.isArray(payload.state.archivedChats) ? payload.state.archivedChats : []
-            };
-            store.set(persistStateAtom, { ...store.get(persistStateAtom), chatState: nextChatState });
-          }
-          messageInput.value = "";
-          resizeMessageInput();
+          await consumeChatStream(response, {
+            onDelta: (_chunk, fullText) => {
+              updateStreamingBubble(fullText);
+            },
+            onDone: (payload) => {
+              finalizeStreamingBubble(payload.reply);
+              if (payload.state?.activeMessages) {
+                store.set(persistStateAtom, {
+                  ...store.get(persistStateAtom),
+                  chatState: {
+                    activeMessages: Array.isArray(payload.state.activeMessages) ? payload.state.activeMessages : [],
+                    archivedChats: Array.isArray(payload.state.archivedChats) ? payload.state.archivedChats : store.get(persistStateAtom).chatState.archivedChats
+                  }
+                });
+              }
+            },
+            onError: (message2) => {
+              clearStreamingBubble();
+              pushUiSystemMessage(message2);
+            }
+          });
         } catch {
+          clearStreamingBubble();
           pushUiSystemMessage("Network error. Please try again.");
         } finally {
-          setUi((prev) => ({ ...prev, isSending: false }));
+          removeTypingIndicator();
+          setUi((prev) => ({ ...prev, isSending: false, isRevealingReply: false }));
           messageInput.focus();
         }
       });
@@ -3477,7 +4012,6 @@ CREATE TABLE IF NOT EXISTS settings (
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              apiKey: persistState.apiKey,
               state: persistState.chatState
             })
           });
@@ -3502,36 +4036,103 @@ CREATE TABLE IF NOT EXISTS settings (
       closeMenuButton.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: false })));
       menuBackdrop.addEventListener("click", () => setUi((prev) => ({ ...prev, isMenuOpen: false })));
       saveSettingsButton.addEventListener("click", () => {
-        const nextModel = settingsModelInput.value.trim();
-        if (!nextModel) {
-          pushUiSystemMessage("Model cannot be empty.");
-          return;
-        }
         const nextSystem = settingsSystemPromptInput.value;
+        const prev = store.get(persistStateAtom);
+        const matchingPreset = prev.instructionPresets.find((preset) => preset.instructions === nextSystem);
         store.set(persistStateAtom, {
-          ...store.get(persistStateAtom),
-          model: nextModel,
-          systemPrompt: nextSystem
+          ...prev,
+          systemPrompt: nextSystem,
+          selectedPresetId: !nextSystem.trim() ? BUILTIN_PRESET_ID : matchingPreset?.id ?? null
         });
       });
-      changeApiKeyButton.addEventListener("click", () => {
-        const panel = ensureApiKeyPanel();
-        const input = panel.querySelector("input[type='password']");
-        if (input) {
-          input.value = "";
-          input.placeholder = "New API key";
-        }
-        setUi((prev) => ({ ...prev, apiKeyPanelOpen: true }));
-        input?.focus();
+      savedModelSelect.addEventListener("change", () => {
+        const modelId = savedModelSelect.value.trim();
+        if (!modelId) return;
+        const prev = store.get(persistStateAtom);
+        if (!prev.modelProfiles.some((profile) => profile.modelId === modelId)) return;
+        store.set(persistStateAtom, { ...prev, activeModelId: modelId });
       });
-      removeApiKeyButton.addEventListener("click", () => {
-        if (!confirm(
-          "Remove the API key from this browser? You will need to enter it again to send messages."
-        )) {
+      addModelButton.addEventListener("click", () => {
+        setUi((prev) => ({ ...prev, addModelPanelOpen: true, apiKeyPanelOpen: true }));
+      });
+      removeModelButton.addEventListener("click", () => {
+        const prev = store.get(persistStateAtom);
+        const activeProfile = getActiveConnection(prev);
+        if (!activeProfile) return;
+        if (!confirm(`Remove ${formatSavedModelLabel(activeProfile.modelId)} and its API key from this browser?`)) {
           return;
         }
-        store.set(persistStateAtom, { ...store.get(persistStateAtom), apiKey: "" });
-        setUi((prev) => ({ ...prev, apiKeyPanelOpen: false }));
+        const nextProfiles = prev.modelProfiles.filter(
+          (profile) => profile.modelId !== activeProfile.modelId
+        );
+        const nextActiveId = nextProfiles.find((profile) => profile.modelId === prev.activeModelId)?.modelId ?? nextProfiles[0]?.modelId ?? "";
+        store.set(persistStateAtom, {
+          ...prev,
+          modelProfiles: nextProfiles,
+          activeModelId: nextActiveId
+        });
+      });
+      instructionPresetSelect.addEventListener("change", () => {
+        const presetId = instructionPresetSelect.value;
+        if (!presetId) return;
+        applyInstructionPreset(presetId);
+      });
+      settingsSystemPromptInput.addEventListener("input", () => {
+        renderInstructionPresetControls(store.get(persistStateAtom));
+      });
+      saveInstructionPresetButton.addEventListener("click", () => {
+        const prev = store.get(persistStateAtom);
+        const instructions = settingsSystemPromptInput.value;
+        const requestedName = instructionPresetNameInput.value.trim();
+        if (!requestedName) {
+          pushUiSystemMessage("Enter a name for the preset.");
+          return;
+        }
+        const existingByName = findPresetByName(prev.instructionPresets, requestedName);
+        const displayPresetId = resolveDisplayPresetId(instructions, prev.instructionPresets);
+        const selectedPreset = displayPresetId && displayPresetId !== BUILTIN_PRESET_ID ? findPresetById(prev.instructionPresets, displayPresetId) : void 0;
+        let nextPresets;
+        let nextSelectedId;
+        if (existingByName) {
+          nextPresets = prev.instructionPresets.map(
+            (preset) => preset.id === existingByName.id ? { ...preset, name: requestedName, instructions } : preset
+          );
+          nextSelectedId = existingByName.id;
+        } else if (selectedPreset) {
+          nextPresets = prev.instructionPresets.map(
+            (preset) => preset.id === selectedPreset.id ? { ...preset, name: requestedName, instructions } : preset
+          );
+          nextSelectedId = selectedPreset.id;
+        } else {
+          const preset = {
+            id: createPresetId(),
+            name: requestedName,
+            instructions
+          };
+          nextPresets = [...prev.instructionPresets, preset];
+          nextSelectedId = preset.id;
+        }
+        store.set(persistStateAtom, {
+          ...prev,
+          systemPrompt: instructions,
+          instructionPresets: nextPresets,
+          selectedPresetId: nextSelectedId
+        });
+      });
+      deleteInstructionPresetButton.addEventListener("click", () => {
+        const prev = store.get(persistStateAtom);
+        const instructions = settingsSystemPromptInput.value;
+        const displayPresetId = resolveDisplayPresetId(instructions, prev.instructionPresets);
+        if (!displayPresetId || displayPresetId === BUILTIN_PRESET_ID) return;
+        const preset = findPresetById(prev.instructionPresets, displayPresetId);
+        if (!preset) return;
+        if (!confirm(`Delete preset "${preset.name}"?`)) return;
+        const nextPresets = prev.instructionPresets.filter((item) => item.id !== displayPresetId);
+        store.set(persistStateAtom, {
+          ...prev,
+          instructionPresets: nextPresets,
+          selectedPresetId: resolveDisplayPresetId(instructions, nextPresets)
+        });
       });
       recentList.addEventListener("click", async (event) => {
         const target = event.target;
@@ -3566,7 +4167,6 @@ CREATE TABLE IF NOT EXISTS settings (
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              apiKey: persistState.apiKey,
               chatId,
               state: persistState.chatState
             })

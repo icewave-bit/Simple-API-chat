@@ -1,5 +1,17 @@
 import initSqlJs from "sql.js";
 import type { ChatMessage, ChatState } from "./chatTypes";
+import {
+  BUILTIN_PRESET_ID,
+  parseInstructionPresets,
+  resolveSelectedPresetId,
+  serializeInstructionPresets,
+  type InstructionPreset,
+} from "./instructionPresets";
+import {
+  parseModelProfiles,
+  serializeModelProfiles,
+  type ModelProfile,
+} from "./modelProfiles";
 import type { PersistState } from "./state";
 import sqlWasmBrowser from "sql.js/dist/sql-wasm-browser.wasm";
 
@@ -8,7 +20,7 @@ const LOCAL_STORAGE_DB_KEY = "ai-chat-db-v1";
 // Schema:
 // - chats: archived chat metadata
 // - messages: messages for both archived chats (chatId=<archivedId>) and active chat (chatId='current')
-// - settings: apiKey, aiModel, systemPrompt
+// - settings: modelProfiles, activeModelId, systemPrompt, instructionPresets, selectedPresetId
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
@@ -37,7 +49,6 @@ export type LoadedDb = {
 };
 
 const encodeBase64 = (bytes: Uint8Array): string => {
-  // Convert Uint8Array -> binary string -> base64.
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
@@ -50,31 +61,43 @@ const decodeBase64 = (base64: string): Uint8Array => {
   return bytes;
 };
 
-const loadApiKey = (db: any): string => {
+const loadSetting = (db: any, key: string): string => {
+  const safeKey = key.replaceAll("'", "''");
   const result = db.exec(
-    "SELECT value FROM settings WHERE key='apiKey' LIMIT 1;"
+    `SELECT value FROM settings WHERE key='${safeKey}' LIMIT 1;`
   ) as undefined | { values: unknown[][] }[];
   const rows = result?.[0]?.values;
   if (!rows || rows.length === 0) return "";
   return String(rows[0]?.[0] ?? "");
 };
 
-const loadModel = (db: any): string => {
-  const result = db.exec(
-    "SELECT value FROM settings WHERE key='aiModel' LIMIT 1;"
-  ) as undefined | { values: unknown[][] }[];
-  const rows = result?.[0]?.values;
-  if (!rows || rows.length === 0) return "";
-  return String(rows[0]?.[0] ?? "");
+const loadModelProfiles = (db: any): ModelProfile[] => {
+  const stored = parseModelProfiles(loadSetting(db, "modelProfiles"));
+  if (stored.length > 0) return stored;
+
+  const legacyApiKey = loadSetting(db, "apiKey");
+  const legacyModel = loadSetting(db, "aiModel").trim();
+  if (legacyApiKey && legacyModel) {
+    return [{ modelId: legacyModel, apiKey: legacyApiKey }];
+  }
+  return [];
 };
 
-const loadSystemPrompt = (db: any): string => {
-  const result = db.exec(
-    "SELECT value FROM settings WHERE key='systemPrompt' LIMIT 1;"
-  ) as undefined | { values: unknown[][] }[];
-  const rows = result?.[0]?.values;
-  if (!rows || rows.length === 0) return "";
-  return String(rows[0]?.[0] ?? "");
+const loadActiveModelId = (db: any, profiles: ModelProfile[]): string => {
+  const stored = loadSetting(db, "activeModelId").trim();
+  if (stored && profiles.some((profile) => profile.modelId === stored)) return stored;
+  return profiles[0]?.modelId ?? "";
+};
+
+const loadSystemPrompt = (db: any): string => loadSetting(db, "systemPrompt");
+
+const loadInstructionPresets = (db: any): InstructionPreset[] =>
+  parseInstructionPresets(loadSetting(db, "instructionPresets"));
+
+const loadSelectedPresetId = (db: any): string | null => {
+  const value = loadSetting(db, "selectedPresetId").trim();
+  if (!value) return BUILTIN_PRESET_ID;
+  return value;
 };
 
 const loadChatState = (db: any): ChatState => {
@@ -122,7 +145,6 @@ export const initLocalDbAndLoad = async (): Promise<{ loaded: PersistState; db: 
 
   const SQL = await initSqlJs({
     locateFile: (fileName: string) => {
-      // `sql.js` calls locateFile('sql-wasm-browser.wasm', ...); we return the bundled URL.
       void fileName;
       return sqlWasmBrowser;
     },
@@ -135,15 +157,23 @@ export const initLocalDbAndLoad = async (): Promise<{ loaded: PersistState; db: 
 
   db.exec(SCHEMA_SQL);
 
-  const apiKey = loadApiKey(db);
-  const model = loadModel(db);
+  const modelProfiles = loadModelProfiles(db);
+  const activeModelId = loadActiveModelId(db, modelProfiles);
   const systemPrompt = loadSystemPrompt(db);
+  const instructionPresets = loadInstructionPresets(db);
+  const selectedPresetId = resolveSelectedPresetId(
+    systemPrompt,
+    instructionPresets,
+    loadSelectedPresetId(db)
+  );
   const chatState = loadChatState(db);
 
   const loaded: PersistState = {
-    apiKey,
-    model,
+    modelProfiles,
+    activeModelId,
     systemPrompt,
+    instructionPresets,
+    selectedPresetId,
     chatState,
   };
 
@@ -157,19 +187,20 @@ export const savePersistStateToLocalDb = (
 ): void => {
   db.exec("BEGIN TRANSACTION;");
 
-  // Wipe and reinsert (simple & deterministic for small histories).
   db.exec("DELETE FROM chats;");
   db.exec("DELETE FROM messages;");
-  db.exec("DELETE FROM settings WHERE key IN ('apiKey', 'aiModel', 'systemPrompt');");
+  db.exec(
+    "DELETE FROM settings WHERE key IN ('apiKey', 'aiModel', 'modelProfiles', 'activeModelId', 'systemPrompt', 'instructionPresets', 'selectedPresetId');"
+  );
 
-  if (persistState.apiKey) {
-    const escaped = persistState.apiKey.replaceAll("'", "''");
-    db.exec(`INSERT INTO settings (key, value) VALUES ('apiKey', '${escaped}');`);
+  if (persistState.modelProfiles.length > 0) {
+    const escapedProfiles = serializeModelProfiles(persistState.modelProfiles).replaceAll("'", "''");
+    db.exec(`INSERT INTO settings (key, value) VALUES ('modelProfiles', '${escapedProfiles}');`);
   }
 
-  if (persistState.model.trim()) {
-    const escapedModel = persistState.model.replaceAll("'", "''");
-    db.exec(`INSERT INTO settings (key, value) VALUES ('aiModel', '${escapedModel}');`);
+  if (persistState.activeModelId.trim()) {
+    const escapedModelId = persistState.activeModelId.replaceAll("'", "''");
+    db.exec(`INSERT INTO settings (key, value) VALUES ('activeModelId', '${escapedModelId}');`);
   }
 
   if (persistState.systemPrompt.trim()) {
@@ -177,7 +208,20 @@ export const savePersistStateToLocalDb = (
     db.exec(`INSERT INTO settings (key, value) VALUES ('systemPrompt', '${escapedSp}');`);
   }
 
-  // Archived chats.
+  if (persistState.instructionPresets.length > 0) {
+    const escapedPresets = serializeInstructionPresets(persistState.instructionPresets).replaceAll(
+      "'",
+      "''"
+    );
+    db.exec(`INSERT INTO settings (key, value) VALUES ('instructionPresets', '${escapedPresets}');`);
+  }
+
+  const presetId = persistState.selectedPresetId ?? "";
+  if (presetId) {
+    const escapedPresetId = presetId.replaceAll("'", "''");
+    db.exec(`INSERT INTO settings (key, value) VALUES ('selectedPresetId', '${escapedPresetId}');`);
+  }
+
   for (const chat of persistState.chatState.archivedChats) {
     const id = chat.id.replaceAll("'", "''");
     const title = (chat.title || "Archived chat").replaceAll("'", "''");
@@ -196,7 +240,6 @@ export const savePersistStateToLocalDb = (
     });
   }
 
-  // Active chat messages live in chatId='current'.
   persistState.chatState.activeMessages.forEach((m, idx) => {
     const role = m.role.replaceAll("'", "''");
     const content = m.content.replaceAll("'", "''");
@@ -212,4 +255,3 @@ export const savePersistStateToLocalDb = (
   const base64 = encodeBase64(bytes);
   localStorage.setItem(LOCAL_STORAGE_DB_KEY, base64);
 };
-

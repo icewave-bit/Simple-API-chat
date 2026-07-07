@@ -145,7 +145,7 @@ label.lbl {
 }
 .lbl:first-of-type { margin-top: 0; }
 
-input.inp, textarea.inp {
+input.inp, textarea.inp, select.inp {
   width: 100%;
   margin: 0;
   padding: 8px 9px;
@@ -160,7 +160,7 @@ input.inp, textarea.inp {
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
 }
 textarea.inp { min-height: 3.2em; resize: vertical; }
-input.inp:focus, textarea.inp:focus {
+input.inp:focus, textarea.inp:focus, select.inp:focus {
   outline: none;
   border-color: #6b9bd2;
 }
@@ -321,7 +321,8 @@ ul.arch li.arch-row {
 
 .chat-log {
   min-height: 100%;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
   padding: 12px 10px 8px;
   background: #d1d5de;
   background: -webkit-linear-gradient(top, #dce0e8 0%, #c8cdd8 40%, #bec4d0 100%);
@@ -335,14 +336,18 @@ ul.arch li.arch-row {
 }
 .msg-stack {
   max-width: 78%;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
 }
 .msg-row-user .msg-stack {
   float: right;
   text-align: right;
+  clear: right;
 }
 .msg-row-assistant .msg-stack {
   float: left;
   text-align: left;
+  clear: left;
 }
 .msg-row-system {
   text-align: center;
@@ -369,11 +374,16 @@ ul.arch li.arch-row {
 .msg-row-user .msg-label { color: #4a6fa0; }
 
 .m {
-  display: inline-block;
+  display: block;
+  max-width: 100%;
   text-align: left;
   padding: 9px 12px;
   white-space: pre-wrap;
   word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
   -webkit-border-radius: 16px;
   border-radius: 16px;
   -webkit-box-shadow: 0 1px 2px rgba(0,0,0,0.08);
@@ -400,6 +410,22 @@ ul.arch li.arch-row {
   background: #fff;
   border: 1px solid #b8bcc4;
   color: #222;
+}
+.m-assistant.is-streaming::after {
+  content: "▋";
+  display: inline-block;
+  margin-left: 2px;
+  color: #4a90d9;
+  -webkit-animation: legacy-stream-caret 0.9s step-end infinite;
+  animation: legacy-stream-caret 0.9s step-end infinite;
+}
+@-webkit-keyframes legacy-stream-caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes legacy-stream-caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 .m-system {
   font-size: 0.86em;
@@ -515,6 +541,9 @@ html.tiny-legacy .chat-log {
 html.tiny-legacy .msg-row {
   margin: 0 0 6px;
 }
+html.tiny-legacy .msg-stack {
+  max-width: 84%;
+}
 html.tiny-legacy .msg-label {
   margin: 0 2px 2px;
 }
@@ -522,6 +551,7 @@ html.tiny-legacy .m {
   padding: 6px 10px;
   -webkit-border-radius: 12px;
   border-radius: 12px;
+  word-break: break-word;
 }
 html.tiny-legacy .msg-time {
   margin: 2px 4px 0;
@@ -595,7 +625,8 @@ html.tiny-legacy .drawer .lbl:first-of-type {
   margin-top: 0;
 }
 html.tiny-legacy .drawer input.inp,
-html.tiny-legacy .drawer textarea.inp {
+html.tiny-legacy .drawer textarea.inp,
+html.tiny-legacy .drawer select.inp {
   padding: 5px 7px;
   font-size: 16px;
 }
@@ -673,7 +704,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
         <label class="lbl" for="f-key">API key</label>
         <input class="inp" type="password" id="f-key" autocomplete="off">
         <label class="lbl" for="f-model">Model</label>
-        <input class="inp" type="text" id="f-model" autocomplete="off" placeholder="e.g. openai/gpt-4o-mini">
+        <select class="inp" id="f-model" name="f-model"></select>
         <label class="lbl" for="f-sys">Assistant instructions (optional)</label>
         <textarea class="inp" id="f-sys" rows="2" autocomplete="off" placeholder="Leave empty for default"></textarea>
         <div class="btn-row">
@@ -718,6 +749,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
   </div>
 </div>
 
+<script src="/vsellm-catalog.js"></script>
 <script type="text/javascript">
 (function () {
   var STORAGE_KEY = "ai-chat-legacy-v1";
@@ -878,9 +910,250 @@ html.tiny-legacy body.compose-focus .chat-compose {
     x.send(body);
   }
 
+  var streamingRow = null;
+  var streamingBubble = null;
+
+  function clearStreamingRow() {
+    if (streamingRow && streamingRow.parentNode) {
+      streamingRow.parentNode.removeChild(streamingRow);
+    }
+    streamingRow = null;
+    streamingBubble = null;
+  }
+
+  function ensureStreamingBubble() {
+    if (streamingBubble && streamingRow) {
+      return streamingBubble;
+    }
+
+    var log = $("log");
+    var empty = log.querySelector(".log-empty");
+    if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+    var row = document.createElement("div");
+    row.className = "msg-row msg-row-assistant";
+
+    var stack = document.createElement("div");
+    stack.className = "msg-stack";
+
+    var lab = document.createElement("div");
+    lab.className = "msg-label";
+    lab.appendChild(document.createTextNode("Assistant"));
+
+    var div = document.createElement("div");
+    div.className = "m m-assistant is-streaming";
+    div.appendChild(document.createTextNode(""));
+
+    stack.appendChild(lab);
+    stack.appendChild(div);
+    row.appendChild(stack);
+    log.appendChild(row);
+
+    streamingRow = row;
+    streamingBubble = div;
+    scrollLogToEnd();
+    return div;
+  }
+
+  function updateStreamingBubble(text) {
+    var bubble = ensureStreamingBubble();
+    while (bubble.firstChild) bubble.removeChild(bubble.firstChild);
+    bubble.appendChild(document.createTextNode(text));
+    scrollLogToEnd();
+  }
+
+  function appendUserMessageRow(text) {
+    var log = $("log");
+    var empty = log.querySelector(".log-empty");
+    if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+    var row = document.createElement("div");
+    row.className = "msg-row msg-row-user";
+
+    var stack = document.createElement("div");
+    stack.className = "msg-stack";
+
+    var lab = document.createElement("div");
+    lab.className = "msg-label";
+    lab.appendChild(document.createTextNode("You"));
+
+    var div = document.createElement("div");
+    div.className = "m m-user";
+    div.appendChild(document.createTextNode(text));
+
+    var tm = document.createElement("div");
+    tm.className = "msg-time";
+    tm.appendChild(document.createTextNode(fmtTime(new Date().toISOString())));
+
+    stack.appendChild(lab);
+    stack.appendChild(div);
+    stack.appendChild(tm);
+    row.appendChild(stack);
+    log.appendChild(row);
+    scrollLogToEnd();
+    return row;
+  }
+
+  function handleStreamEvent(event, handlers) {
+    if (!event || !event.type) return false;
+
+    if (event.type === "delta" && typeof event.content === "string") {
+      handlers.onDelta(event.content);
+      return false;
+    }
+
+    if (event.type === "error") {
+      handlers.onError(event.error || "Stream failed.");
+      return true;
+    }
+
+    if (event.type === "done" && event.state) {
+      handlers.onDone({
+        reply: typeof event.reply === "string" ? event.reply : handlers.getFullText(),
+        state: event.state,
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  function parseSseSegments(segments, handlers) {
+    for (var i = 0; i < segments.length; i++) {
+      var lines = segments[i].split("\n");
+      for (var j = 0; j < lines.length; j++) {
+        var line = lines[j];
+        if (line.indexOf("data: ") !== 0) continue;
+        var raw = trim(line.slice(6));
+        if (!raw) continue;
+        var event = null;
+        try {
+          event = JSON.parse(raw);
+        } catch (e4) {
+          continue;
+        }
+        if (handleStreamEvent(event, handlers)) return true;
+      }
+    }
+    return false;
+  }
+
+  function xhrChatStream(bodyObj, handlers, done) {
+    var x = new XMLHttpRequest();
+    var processed = 0;
+    var sseBuffer = "";
+    var contentType = "";
+    var finished = false;
+
+    function finish() {
+      if (finished) return;
+      finished = true;
+      done();
+    }
+
+    function processChunk() {
+      if (finished) return;
+      var text = x.responseText || "";
+      if (text.length <= processed) return;
+
+      contentType = contentType || (x.getResponseHeader("Content-Type") || "");
+      sseBuffer += text.slice(processed);
+      processed = text.length;
+
+      if (contentType.indexOf("text/event-stream") === -1) return;
+
+      var segments = sseBuffer.split("\n\n");
+      sseBuffer = segments.pop() || "";
+      if (parseSseSegments(segments, handlers)) finish();
+    }
+
+    x.open("POST", "/api/chat/stream", true);
+    x.setRequestHeader("Content-Type", "application/json");
+    x.onprogress = processChunk;
+    x.onreadystatechange = function () {
+      if (x.readyState === 3) processChunk();
+      if (x.readyState !== 4) return;
+
+      processChunk();
+
+      if (finished) return;
+
+      contentType = contentType || (x.getResponseHeader("Content-Type") || "");
+      if (x.status < 200 || x.status >= 300 || contentType.indexOf("text/event-stream") === -1) {
+        var data = null;
+        try {
+          if (x.responseText) data = JSON.parse(x.responseText);
+        } catch (e5) {}
+        handlers.onError((data && data.error) || "Request failed.");
+        finish();
+        return;
+      }
+
+      if (sseBuffer) {
+        if (parseSseSegments([sseBuffer], handlers)) {
+          finish();
+          return;
+        }
+      }
+
+      if (handlers.getFullText()) {
+        handlers.onError("Stream ended without a complete response.");
+      } else {
+        handlers.onError("Stream ended without a response.");
+      }
+      finish();
+    };
+    x.send(JSON.stringify(bodyObj));
+  }
+
+  function populateModelSelect(selectedId) {
+    var sel = $("f-model");
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.appendChild(document.createTextNode("Choose a model"));
+    sel.appendChild(placeholder);
+
+    var catalog =
+      window.VsellmCatalog && window.VsellmCatalog.getSortedTextModels
+        ? window.VsellmCatalog.getSortedTextModels()
+        : window.VsellmCatalog && window.VsellmCatalog.VSELLM_TEXT_MODELS
+          ? window.VsellmCatalog.VSELLM_TEXT_MODELS
+          : [];
+
+    for (var i = 0; i < catalog.length; i++) {
+      var entry = catalog[i];
+      if (!entry || !entry.id) continue;
+      var opt = document.createElement("option");
+      opt.value = entry.id;
+      var label = entry.name || entry.id;
+      if (
+        window.VsellmCatalog &&
+        window.VsellmCatalog.formatVsellmModelOptionLabel &&
+        entry.name
+      ) {
+        label = window.VsellmCatalog.formatVsellmModelOptionLabel(entry);
+      }
+      opt.appendChild(document.createTextNode(label));
+      sel.appendChild(opt);
+    }
+
+    if (selectedId) {
+      sel.value = selectedId;
+      if (sel.value !== selectedId) {
+        var custom = document.createElement("option");
+        custom.value = selectedId;
+        custom.appendChild(document.createTextNode(selectedId));
+        sel.appendChild(custom);
+        sel.value = selectedId;
+      }
+    }
+  }
+
   function applyConnToForm() {
     $("f-key").value = app.apiKey;
-    $("f-model").value = app.model;
+    populateModelSelect(app.model);
     $("f-sys").value = app.systemPrompt;
   }
 
@@ -1070,33 +1343,47 @@ html.tiny-legacy body.compose-focus .chat-compose {
     }
     var text = trim($("f-msg").value);
     if (!text) return false;
+
     var btn = $("btn-send");
     btn.disabled = true;
-    xhrJson(
-      "POST",
-      "/api/chat",
+    $("f-msg").value = "";
+    appendUserMessageRow(text);
+
+    var streamText = "";
+    xhrChatStream(
       {
         apiKey: app.apiKey,
         message: text,
         model: app.model,
         systemPrompt: app.systemPrompt,
-        state: app.chatState
+        state: app.chatState,
       },
-      function (status, data) {
-        btn.disabled = false;
-        if (status < 200 || status >= 300) {
-          setErr((data && data.error) || "Request failed.");
-          return;
-        }
-        if (data && data.state) {
-          app.chatState = data.state;
+      {
+        getFullText: function () {
+          return streamText;
+        },
+        onDelta: function (chunk) {
+          streamText += chunk;
+          updateStreamingBubble(streamText);
+        },
+        onDone: function (payload) {
+          clearStreamingRow();
+          app.chatState = {
+            activeMessages: payload.state.activeMessages || [],
+            archivedChats: payload.state.archivedChats || app.chatState.archivedChats || [],
+          };
           persist();
-          $("f-msg").value = "";
           renderLog();
           renderArchive();
-        } else {
-          setErr("Bad response from server.");
-        }
+        },
+        onError: function (message) {
+          clearStreamingRow();
+          renderLog();
+          setErr(message);
+        },
+      },
+      function () {
+        btn.disabled = false;
       }
     );
     return false;

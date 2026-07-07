@@ -171,6 +171,90 @@ const extractAssistantText = (data: unknown): string => {
   return parts.join("").trim();
 };
 
+const extractStreamDelta = (data: unknown): string => {
+  if (!data || typeof data !== "object") return "";
+  const choices = (data as Record<string, unknown>).choices;
+  if (!Array.isArray(choices) || choices.length === 0) return "";
+  const choice = choices[0];
+  if (!choice || typeof choice !== "object") return "";
+  const delta = (choice as Record<string, unknown>).delta;
+  if (!delta || typeof delta !== "object") return "";
+  const text = (delta as Record<string, unknown>).content;
+  if (typeof text === "string") return text;
+  if (!Array.isArray(text)) return "";
+
+  const parts: string[] = [];
+  for (const part of text) {
+    if (typeof part === "string") parts.push(part);
+    else if (part && typeof part === "object") {
+      const p = part as Record<string, unknown>;
+      if (typeof p.text === "string") parts.push(p.text);
+      else if (typeof p.content === "string") parts.push(p.content);
+    }
+  }
+  return parts.join("");
+};
+
+type ParsedChatSend =
+  | {
+      ok: true;
+      apiKey: string;
+      userMessage: string;
+      model: string;
+      state: ChatState;
+      systemContent: string;
+      userEntry: ChatMessage;
+      messagesForModel: { role: string; content: string }[];
+    }
+  | { ok: false; status: number; error: string };
+
+const parseChatSendRequest = (body: unknown): ParsedChatSend => {
+  const raw = body as Partial<ChatSendRequest> | undefined;
+  const userMessage = typeof raw?.message === "string" ? raw.message.trim() : "";
+  const apiKey = typeof raw?.apiKey === "string" ? raw.apiKey.trim() : "";
+  if (!apiKey) return { ok: false, status: 400, error: "apiKey is required." };
+
+  const state = parseChatState(raw?.state);
+  if (!state) return { ok: false, status: 400, error: "Invalid state." };
+  if (!userMessage) return { ok: false, status: 400, error: "Message is required." };
+
+  const model = typeof raw?.model === "string" ? raw.model.trim() : "";
+  if (!model) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Model is required. Choose Menu → Settings and enter a model id.",
+    };
+  }
+
+  const systemPrompt = typeof raw?.systemPrompt === "string" ? raw.systemPrompt.trim() : "";
+  const systemContent = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+  const userEntry: ChatMessage = {
+    role: "user",
+    content: userMessage,
+    createdAt: nowIso(),
+  };
+
+  return {
+    ok: true,
+    apiKey,
+    userMessage,
+    model,
+    state,
+    systemContent,
+    userEntry,
+    messagesForModel: [
+      { role: "system", content: systemContent },
+      ...state.activeMessages.map(toAIMessage),
+      toAIMessage(userEntry),
+    ],
+  };
+};
+
+const writeSseEvent = (res: Response, payload: Record<string, unknown>) => {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
 const toAIMessage = (message: ChatMessage) => ({
   role: message.role,
   content: message.content,
@@ -192,59 +276,21 @@ const buildArchivedChat = (messages: ChatMessage[]): ArchivedChat => {
 app.post(
   "/api/chat",
   async (req: Request<{}, any, unknown>, res: Response): Promise<Response | void> => {
-    const body = req.body as Partial<ChatSendRequest> | undefined;
-    const userMessage =
-      typeof body?.message === "string" ? body.message.trim() : "";
-    const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
-    if (!apiKey) {
-      return res.status(400).json({ error: "apiKey is required." });
+    const parsed = parseChatSendRequest(req.body);
+    if (!parsed.ok) {
+      return res.status(parsed.status).json({ error: parsed.error });
     }
-
-    const state = parseChatState(body?.state);
-    if (!state) {
-      return res.status(400).json({ error: "Invalid state." });
-    }
-
-    if (!userMessage) {
-      return res.status(400).json({ error: "Message is required." });
-    }
-
-    const model = typeof body?.model === "string" ? body.model.trim() : "";
-    if (!model) {
-      return res.status(400).json({
-        error: "Model is required. Choose Menu → Settings and enter a model id.",
-      });
-    }
-
-    const systemPrompt =
-      typeof body?.systemPrompt === "string" ? body.systemPrompt.trim() : "";
-    const systemContent = systemPrompt || DEFAULT_SYSTEM_PROMPT;
 
     try {
-      const userEntry: ChatMessage = {
-        role: "user",
-        content: userMessage,
-        createdAt: nowIso(),
-      };
-
-      const messagesForModel = [
-        {
-          role: "system" as const,
-          content: systemContent,
-        },
-        ...state.activeMessages.map(toAIMessage),
-        toAIMessage(userEntry),
-      ];
-
       const response = await fetch(AI_API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${parsed.apiKey}`,
         },
         body: JSON.stringify({
-          model,
-          messages: messagesForModel,
+          model: parsed.model,
+          messages: parsed.messagesForModel,
           temperature: 0.7,
         }),
       });
@@ -279,8 +325,8 @@ app.post(
       };
 
       const updatedState: ChatState = {
-        ...state,
-        activeMessages: [...state.activeMessages, userEntry, assistantEntry],
+        ...parsed.state,
+        activeMessages: [...parsed.state.activeMessages, parsed.userEntry, assistantEntry],
       };
 
       return res.json({
@@ -293,6 +339,121 @@ app.post(
       return res.status(500).json({
         error: `Server failed to process request: ${detail}`,
       });
+    }
+  }
+);
+
+app.post(
+  "/api/chat/stream",
+  async (req: Request<{}, any, unknown>, res: Response): Promise<Response | void> => {
+    const parsed = parseChatSendRequest(req.body);
+    if (!parsed.ok) {
+      return res.status(parsed.status).json({ error: parsed.error });
+    }
+
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+
+    try {
+      const upstream = await fetch(AI_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${parsed.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: parsed.model,
+          messages: parsed.messagesForModel,
+          temperature: 0.7,
+          stream: true,
+        }),
+      });
+
+      if (!upstream.ok) {
+        const { data, raw } = await readJsonBody(upstream);
+        writeSseEvent(res, {
+          type: "error",
+          error: upstreamErrorText(data, raw, upstream.status),
+        });
+        res.end();
+        return;
+      }
+
+      if (!upstream.body) {
+        writeSseEvent(res, { type: "error", error: "Upstream returned an empty stream." });
+        res.end();
+        return;
+      }
+
+      const reader = upstream.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullReply = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const segments = buffer.split("\n\n");
+        buffer = segments.pop() ?? "";
+
+        for (const segment of segments) {
+          for (const line of segment.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (!payload || payload === "[DONE]") continue;
+
+            let data: unknown;
+            try {
+              data = JSON.parse(payload) as unknown;
+            } catch {
+              continue;
+            }
+
+            const delta = extractStreamDelta(data);
+            if (!delta) continue;
+
+            fullReply += delta;
+            writeSseEvent(res, { type: "delta", content: delta });
+          }
+        }
+      }
+
+      if (!fullReply.trim()) {
+        writeSseEvent(res, {
+          type: "error",
+          error:
+            "AI API returned an empty or unrecognized assistant message. Check model name and response format.",
+        });
+        res.end();
+        return;
+      }
+
+      const assistantEntry: ChatMessage = {
+        role: "assistant",
+        content: fullReply,
+        createdAt: nowIso(),
+      };
+
+      const updatedState: ChatState = {
+        ...parsed.state,
+        activeMessages: [...parsed.state.activeMessages, parsed.userEntry, assistantEntry],
+      };
+
+      writeSseEvent(res, {
+        type: "done",
+        reply: fullReply,
+        state: updatedState,
+      });
+      res.end();
+    } catch (error) {
+      console.error("Chat stream error:", error);
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      writeSseEvent(res, { type: "error", error: `Server failed to process request: ${detail}` });
+      res.end();
     }
   }
 );
