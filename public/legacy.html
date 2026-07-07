@@ -12,19 +12,12 @@
 }
 html {
   -webkit-text-size-adjust: 100%;
-  width: 100%;
   height: 100%;
   overflow: hidden;
 }
 body {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   margin: 0;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
   height: 100%;
   overflow: hidden;
   font-size: 15px;
@@ -34,13 +27,12 @@ body {
 }
 
 #app-viewport {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   width: 100%;
-  height: 100%;
   overflow: hidden;
   z-index: 0;
 }
@@ -844,10 +836,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
   function getLayoutViewportHeight() {
     var h = window.innerHeight || document.documentElement.clientHeight || 0;
     if (h > stableViewportHeight) stableViewportHeight = h;
-    if (stableViewportHeight > 0 && h > 0 && h < stableViewportHeight * 0.8) {
-      return stableViewportHeight;
-    }
-    if (h < 160 && stableViewportHeight > 0) return stableViewportHeight;
+    if (h < 160) h = stableViewportHeight || 480;
     return h;
   }
 
@@ -857,19 +846,38 @@ html.tiny-legacy body.compose-focus .chat-compose {
     if (document.documentElement) document.documentElement.scrollTop = 0;
   }
 
-  function syncViewportLayout() {
+  function syncViewportLayout(pinScroll) {
     var vp = $("app-viewport");
     var h = getLayoutViewportHeight();
     if (vp && h > 0) vp.style.height = h + "px";
-    pinPageScroll();
+    if (pinScroll) pinPageScroll();
     updateTinyLegacyClass();
   }
 
-  function scheduleViewportSync() {
-    syncViewportLayout();
-    window.setTimeout(syncViewportLayout, 50);
-    window.setTimeout(syncViewportLayout, 200);
-    window.setTimeout(syncViewportLayout, 450);
+  function recoverAfterKeyboardClose() {
+    window.setTimeout(function () {
+      syncViewportLayout(true);
+    }, 100);
+    window.setTimeout(function () {
+      syncViewportLayout(true);
+    }, 350);
+  }
+
+  function ensureComposerVisible() {
+    syncViewportLayout(false);
+    var msgEl = $("f-msg");
+    var compose = document.querySelector(".chat-compose");
+    if (msgEl && msgEl.scrollIntoView) {
+      msgEl.scrollIntoView(false);
+    } else if (compose && compose.scrollIntoView) {
+      compose.scrollIntoView(false);
+    }
+  }
+
+  function scheduleComposerVisible() {
+    ensureComposerVisible();
+    window.setTimeout(ensureComposerVisible, 100);
+    window.setTimeout(ensureComposerVisible, 300);
   }
 
   function dismissComposerFocus() {
@@ -879,16 +887,15 @@ html.tiny-legacy body.compose-focus .chat-compose {
   }
 
   function setMenuOpen(open) {
-    var msgEl = $("f-msg");
     if (open) {
       dismissComposerFocus();
       bodyAddClass("menu-open");
       $("drawer").setAttribute("aria-hidden", "false");
-      scheduleViewportSync();
+      syncViewportLayout(true);
     } else {
       bodyRemoveClass("menu-open");
       $("drawer").setAttribute("aria-hidden", "true");
-      scheduleViewportSync();
+      syncViewportLayout(true);
     }
   }
 
@@ -1027,7 +1034,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
       renderLog();
       renderArchive();
     }
-    scheduleViewportSync();
+    recoverAfterKeyboardClose();
   }
 
   function skipTypewriter() {
@@ -1308,12 +1315,10 @@ html.tiny-legacy body.compose-focus .chat-compose {
     var wrap = $("log-wrap");
     if (wrap) {
       wrap.scrollTop = wrap.scrollHeight;
-      pinPageScroll();
       return;
     }
     var log = $("log");
     if (log) log.scrollTop = log.scrollHeight;
-    pinPageScroll();
   }
 
   function renderLog() {
@@ -1496,7 +1501,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
     pendingUserText = text;
     $("f-msg").value = "";
     dismissComposerFocus();
-    scheduleViewportSync();
+    recoverAfterKeyboardClose();
     setChatBusy(true);
     appendUserMessageRow(text);
 
@@ -1535,7 +1540,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
         }
 
         pendingUserText = "";
-        scheduleViewportSync();
+        recoverAfterKeyboardClose();
         revealAssistantMessage(assistantText, data);
       }
     );
@@ -1544,29 +1549,38 @@ html.tiny-legacy body.compose-focus .chat-compose {
 
   function init() {
     app = loadApp();
-    syncViewportLayout();
+    syncViewportLayout(true);
     if (window.addEventListener) {
       window.addEventListener(
         "resize",
         function () {
           if (viewportSyncTimer) window.clearTimeout(viewportSyncTimer);
-          viewportSyncTimer = window.setTimeout(syncViewportLayout, 100);
+          viewportSyncTimer = window.setTimeout(function () {
+            if (bodyHasClass("compose-focus")) {
+              ensureComposerVisible();
+            } else {
+              syncViewportLayout(true);
+            }
+          }, 100);
         },
         false
       );
-      window.addEventListener("scroll", pinPageScroll, false);
       window.addEventListener(
         "orientationchange",
         function () {
-          scheduleViewportSync();
+          recoverAfterKeyboardClose();
         },
         false
       );
     } else if (window.attachEvent) {
-      window.attachEvent("onresize", syncViewportLayout);
-      window.attachEvent("onscroll", pinPageScroll);
+      window.attachEvent("onresize", function () {
+        if (bodyHasClass("compose-focus")) ensureComposerVisible();
+        else syncViewportLayout(true);
+      });
     }
-    setTimeout(scheduleViewportSync, 400);
+    setTimeout(function () {
+      syncViewportLayout(true);
+    }, 400);
 
     $("btn-save").onclick = saveConn;
     $("btn-clear-key").onclick = clearKey;
@@ -1589,6 +1603,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
           "focus",
           function () {
             bodyAddClass("compose-focus");
+            scheduleComposerVisible();
           },
           false
         );
@@ -1596,15 +1611,18 @@ html.tiny-legacy body.compose-focus .chat-compose {
           "blur",
           function () {
             bodyRemoveClass("compose-focus");
+            recoverAfterKeyboardClose();
           },
           false
         );
       } else {
         msgInput.onfocus = function () {
           bodyAddClass("compose-focus");
+          scheduleComposerVisible();
         };
         msgInput.onblur = function () {
           bodyRemoveClass("compose-focus");
+          recoverAfterKeyboardClose();
         };
       }
     }
