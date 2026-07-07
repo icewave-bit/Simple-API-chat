@@ -26,14 +26,26 @@ body {
   background: #b8bfcd;
 }
 
-/* ---- Slide-out menu ---- */
-.menu-backdrop {
-  display: none;
+#app-viewport {
   position: fixed;
   top: 0;
   left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  z-index: 0;
+}
+
+/* ---- Slide-out menu ---- */
+.menu-backdrop {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0,0,0,0.4);
   z-index: 90;
 }
@@ -42,12 +54,12 @@ body.menu-open .menu-backdrop {
 }
 
 .drawer {
-  position: fixed;
+  position: absolute;
   top: 0;
+  bottom: 0;
   left: 0;
   width: 286px;
   max-width: 88%;
-  height: 100%;
   z-index: 100;
   background: #f2f3f5;
   border-right: 1px solid rgba(0,0,0,0.18);
@@ -59,6 +71,8 @@ body.menu-open .menu-backdrop {
   transform: translateX(-105%);
   -webkit-transition: -webkit-transform 0.22s ease-out;
   transition: transform 0.22s ease-out;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 body.menu-open .drawer {
   -webkit-transform: translateX(0);
@@ -228,8 +242,12 @@ ul.arch li.arch-row {
 
 /* ---- Chat shell (single view) ---- */
 .chat-shell {
-  position: relative;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
   max-width: 40em;
   margin: 0 auto;
   display: -webkit-box;
@@ -506,6 +524,12 @@ ul.arch li.arch-row {
   background: -webkit-linear-gradient(top, #5c9ee0 0%, #3a7ec8 100%);
   background: linear-gradient(to bottom, #5c9ee0 0%, #3a7ec8 100%);
 }
+.compose-row input[type="submit"].is-stop {
+  border-color: #9a3030;
+  background: #d9534f;
+  background: -webkit-linear-gradient(top, #e46a66 0%, #c9302c 100%);
+  background: linear-gradient(to bottom, #e46a66 0%, #c9302c 100%);
+}
 
 /* ---- Tiny viewport (e.g. iPhone 4s in Safari tab; short innerHeight) ---- */
 html.tiny-legacy .chat-topbar {
@@ -688,6 +712,8 @@ html.tiny-legacy body.compose-focus .chat-compose {
 </head>
 <body>
 
+<div id="app-viewport">
+
 <div class="menu-backdrop" id="menu-backdrop"></div>
 
 <aside class="drawer" id="drawer" aria-hidden="true">
@@ -747,6 +773,8 @@ html.tiny-legacy body.compose-focus .chat-compose {
       </div>
     </form>
   </div>
+</div>
+
 </div>
 
 <script src="/legacy-models.js"></script>
@@ -910,6 +938,108 @@ html.tiny-legacy body.compose-focus .chat-compose {
     x.send(body);
   }
 
+  var chatBusy = false;
+  var abortRequested = false;
+  var activeXhr = null;
+  var isRevealing = false;
+  var typewriterTimerId = null;
+  var revealFullText = "";
+  var revealPersistData = null;
+  var pendingUserText = "";
+
+  function setSendButtonMode(stopMode) {
+    var btn = $("btn-send");
+    if (stopMode) {
+      btn.value = "Stop";
+      if (btn.className.indexOf("is-stop") < 0) {
+        btn.className = trim(btn.className + " is-stop");
+      }
+    } else {
+      btn.value = "Send";
+      btn.className = trim(btn.className.replace(/\bis-stop\b/g, ""));
+    }
+  }
+
+  function setChatBusy(busy) {
+    chatBusy = busy;
+    setSendButtonMode(busy);
+  }
+
+  function finalizeReveal() {
+    var data = revealPersistData;
+    revealPersistData = null;
+    revealFullText = "";
+    setChatBusy(false);
+
+    if (data && data.state) {
+      app.chatState = {
+        activeMessages: data.state.activeMessages || [],
+        archivedChats: data.state.archivedChats || app.chatState.archivedChats || [],
+      };
+      persist();
+      renderLog();
+      renderArchive();
+    }
+  }
+
+  function skipTypewriter() {
+    if (!isRevealing) return;
+    isRevealing = false;
+    if (typewriterTimerId) {
+      window.clearTimeout(typewriterTimerId);
+      typewriterTimerId = null;
+    }
+    if (streamingBubble && revealFullText) {
+      while (streamingBubble.firstChild) streamingBubble.removeChild(streamingBubble.firstChild);
+      streamingBubble.appendChild(document.createTextNode(revealFullText));
+      streamingBubble.className = "m m-assistant";
+    }
+    streamingRow = null;
+    streamingBubble = null;
+    scrollLogToEnd();
+    finalizeReveal();
+  }
+
+  function stopChat() {
+    if (activeXhr) {
+      abortRequested = true;
+      activeXhr.abort();
+      activeXhr = null;
+      clearStreamingRow();
+      if (pendingUserText) {
+        $("f-msg").value = pendingUserText;
+        pendingUserText = "";
+      }
+      renderLog();
+      setChatBusy(false);
+      return;
+    }
+    if (isRevealing) {
+      skipTypewriter();
+    }
+  }
+
+  function xhrChat(bodyObj, done) {
+    var x = new XMLHttpRequest();
+    activeXhr = x;
+    x.open("POST", "/api/chat", true);
+    x.setRequestHeader("Content-Type", "application/json");
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (activeXhr === x) activeXhr = null;
+      if (abortRequested) {
+        abortRequested = false;
+        return;
+      }
+      var data = null;
+      try {
+        if (x.responseText) data = JSON.parse(x.responseText);
+      } catch (e3) {}
+      done(x.status, data);
+    };
+    x.send(JSON.stringify(bodyObj));
+  }
+
   var LEGACY_PROVIDER_LABELS = {
     anthropic: "Anthropic",
     deepseek: "DeepSeek",
@@ -1014,30 +1144,37 @@ html.tiny-legacy body.compose-focus .chat-compose {
     return div;
   }
 
-  function revealAssistantMessage(fullText, done) {
+  function revealAssistantMessage(fullText, data) {
     clearStreamingRow();
+    isRevealing = true;
+    revealFullText = fullText;
+    revealPersistData = data;
     var bubble = ensureStreamingBubble();
     var chunkSize = getTypewriterChunkSize(fullText.length);
     var index = 0;
 
     function step() {
+      if (!isRevealing) return;
+
       index = Math.min(fullText.length, index + chunkSize);
       while (bubble.firstChild) bubble.removeChild(bubble.firstChild);
       bubble.appendChild(document.createTextNode(fullText.slice(0, index)));
       scrollLogToEnd();
 
       if (index < fullText.length) {
-        window.setTimeout(step, 16);
+        typewriterTimerId = window.setTimeout(step, 16);
         return;
       }
 
+      isRevealing = false;
+      typewriterTimerId = null;
       if (streamingBubble) {
         streamingBubble.className = "m m-assistant";
       }
       streamingRow = null;
       streamingBubble = null;
       scrollLogToEnd();
-      if (done) done();
+      finalizeReveal();
     }
 
     step();
@@ -1291,6 +1428,12 @@ html.tiny-legacy body.compose-focus .chat-compose {
   function onSubmit(ev) {
     if (ev && ev.preventDefault) ev.preventDefault();
     else if (window.event) window.event.returnValue = false;
+
+    if (chatBusy) {
+      stopChat();
+      return false;
+    }
+
     setErr("");
     readConnFromForm();
     if (!app.apiKey || !app.model) {
@@ -1300,14 +1443,12 @@ html.tiny-legacy body.compose-focus .chat-compose {
     var text = trim($("f-msg").value);
     if (!text) return false;
 
-    var btn = $("btn-send");
-    btn.disabled = true;
+    pendingUserText = text;
     $("f-msg").value = "";
+    setChatBusy(true);
     appendUserMessageRow(text);
 
-    xhrJson(
-      "POST",
-      "/api/chat",
+    xhrChat(
       {
         apiKey: app.apiKey,
         message: text,
@@ -1320,7 +1461,11 @@ html.tiny-legacy body.compose-focus .chat-compose {
           clearStreamingRow();
           renderLog();
           setErr((data && data.error) || "Request failed.");
-          btn.disabled = false;
+          if (pendingUserText) {
+            $("f-msg").value = pendingUserText;
+            pendingUserText = "";
+          }
+          setChatBusy(false);
           return;
         }
 
@@ -1329,22 +1474,16 @@ html.tiny-legacy body.compose-focus .chat-compose {
           clearStreamingRow();
           renderLog();
           setErr("Empty response from the assistant.");
-          btn.disabled = false;
+          if (pendingUserText) {
+            $("f-msg").value = pendingUserText;
+            pendingUserText = "";
+          }
+          setChatBusy(false);
           return;
         }
 
-        revealAssistantMessage(assistantText, function () {
-          if (data && data.state) {
-            app.chatState = {
-              activeMessages: data.state.activeMessages || [],
-              archivedChats: data.state.archivedChats || app.chatState.archivedChats || [],
-            };
-            persist();
-            renderLog();
-            renderArchive();
-          }
-          btn.disabled = false;
-        });
+        pendingUserText = "";
+        revealAssistantMessage(assistantText, data);
       }
     );
     return false;
