@@ -12,12 +12,19 @@
 }
 html {
   -webkit-text-size-adjust: 100%;
+  width: 100%;
   height: 100%;
   overflow: hidden;
 }
 body {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   margin: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   font-size: 15px;
@@ -27,7 +34,7 @@ body {
 }
 
 #app-viewport {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -781,6 +788,8 @@ html.tiny-legacy body.compose-focus .chat-compose {
 <script type="text/javascript">
 (function () {
   var STORAGE_KEY = "ai-chat-legacy-v1";
+  var stableViewportHeight = 0;
+  var viewportSyncTimer = null;
 
   var app = {
     apiKey: "",
@@ -832,22 +841,60 @@ html.tiny-legacy body.compose-focus .chat-compose {
     document.body.className = out.join(" ");
   }
 
+  function getLayoutViewportHeight() {
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (h > stableViewportHeight) stableViewportHeight = h;
+    if (stableViewportHeight > 0 && h > 0 && h < stableViewportHeight * 0.8) {
+      return stableViewportHeight;
+    }
+    if (h < 160 && stableViewportHeight > 0) return stableViewportHeight;
+    return h;
+  }
+
+  function pinPageScroll() {
+    window.scrollTo(0, 0);
+    if (document.body) document.body.scrollTop = 0;
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+  }
+
+  function syncViewportLayout() {
+    var vp = $("app-viewport");
+    var h = getLayoutViewportHeight();
+    if (vp && h > 0) vp.style.height = h + "px";
+    pinPageScroll();
+    updateTinyLegacyClass();
+  }
+
+  function scheduleViewportSync() {
+    syncViewportLayout();
+    window.setTimeout(syncViewportLayout, 50);
+    window.setTimeout(syncViewportLayout, 200);
+    window.setTimeout(syncViewportLayout, 450);
+  }
+
+  function dismissComposerFocus() {
+    bodyRemoveClass("compose-focus");
+    var msgEl = $("f-msg");
+    if (msgEl && msgEl.blur) msgEl.blur();
+  }
+
   function setMenuOpen(open) {
     var msgEl = $("f-msg");
     if (open) {
-      if (msgEl && msgEl.blur) msgEl.blur();
+      dismissComposerFocus();
       bodyAddClass("menu-open");
       $("drawer").setAttribute("aria-hidden", "false");
+      scheduleViewportSync();
     } else {
       bodyRemoveClass("menu-open");
       $("drawer").setAttribute("aria-hidden", "true");
+      scheduleViewportSync();
     }
   }
 
   function updateTinyLegacyClass() {
-    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    var h = getLayoutViewportHeight();
     var w = window.innerWidth || document.documentElement.clientWidth || 0;
-    if (h < 160) h = 480;
     var html = document.documentElement;
     var tiny = h <= 480 || (w <= 330 && h <= 540);
     var cl = html.className || "";
@@ -980,6 +1027,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
       renderLog();
       renderArchive();
     }
+    scheduleViewportSync();
   }
 
   function skipTypewriter() {
@@ -1260,10 +1308,12 @@ html.tiny-legacy body.compose-focus .chat-compose {
     var wrap = $("log-wrap");
     if (wrap) {
       wrap.scrollTop = wrap.scrollHeight;
+      pinPageScroll();
       return;
     }
     var log = $("log");
     if (log) log.scrollTop = log.scrollHeight;
+    pinPageScroll();
   }
 
   function renderLog() {
@@ -1445,6 +1495,8 @@ html.tiny-legacy body.compose-focus .chat-compose {
 
     pendingUserText = text;
     $("f-msg").value = "";
+    dismissComposerFocus();
+    scheduleViewportSync();
     setChatBusy(true);
     appendUserMessageRow(text);
 
@@ -1483,6 +1535,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
         }
 
         pendingUserText = "";
+        scheduleViewportSync();
         revealAssistantMessage(assistantText, data);
       }
     );
@@ -1491,21 +1544,29 @@ html.tiny-legacy body.compose-focus .chat-compose {
 
   function init() {
     app = loadApp();
-    updateTinyLegacyClass();
+    syncViewportLayout();
     if (window.addEventListener) {
-      window.addEventListener("resize", updateTinyLegacyClass, false);
+      window.addEventListener(
+        "resize",
+        function () {
+          if (viewportSyncTimer) window.clearTimeout(viewportSyncTimer);
+          viewportSyncTimer = window.setTimeout(syncViewportLayout, 100);
+        },
+        false
+      );
+      window.addEventListener("scroll", pinPageScroll, false);
       window.addEventListener(
         "orientationchange",
         function () {
-          updateTinyLegacyClass();
-          setTimeout(updateTinyLegacyClass, 200);
+          scheduleViewportSync();
         },
         false
       );
     } else if (window.attachEvent) {
-      window.attachEvent("onresize", updateTinyLegacyClass);
+      window.attachEvent("onresize", syncViewportLayout);
+      window.attachEvent("onscroll", pinPageScroll);
     }
-    setTimeout(updateTinyLegacyClass, 400);
+    setTimeout(scheduleViewportSync, 400);
 
     $("btn-save").onclick = saveConn;
     $("btn-clear-key").onclick = clearKey;
