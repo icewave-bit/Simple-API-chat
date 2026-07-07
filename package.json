@@ -5,10 +5,10 @@
   "main": "dist/server.js",
   "scripts": {
     "build:server": "tsc -p tsconfig.server.json",
-    "build:client": "esbuild public/app.ts --bundle --outfile=public/app.js --platform=browser --format=iife --target=es2022 --loader:.wasm=file && esbuild public/vsellmCatalog.ts --bundle --outfile=public/vsellm-catalog.js --platform=browser --format=iife --global-name=VsellmCatalog",
+    "build:client": "node scripts/generate-legacy-models.js && esbuild public/app.ts --bundle --outfile=public/app.js --platform=browser --format=iife --target=es2022 --loader:.wasm=file && esbuild public/vsellmCatalog.ts --bundle --outfile=public/vsellm-catalog.js --platform=browser --format=iife --global-name=VsellmCatalog",
     "build": "npm run build:server && npm run build:client",
     "start": "node dist/server.js",
-    "dev": "tsc -p tsconfig.server.json --watch & node --watch dist/server.js & esbuild public/app.ts --bundle --outfile=public/app.js --platform=browser --format=iife --target=es2022 --loader:.wasm=file --watch & esbuild public/vsellmCatalog.ts --bundle --outfile=public/vsellm-catalog.js --platform=browser --format=iife --global-name=VsellmCatalog --watch"
+    "dev": "tsc -p tsconfig.server.json --watch & node --watch dist/server.js & node scripts/generate-legacy-models.js & esbuild public/app.ts --bundle --outfile=public/app.js --platform=browser --format=iife --target=es2022 --loader:.wasm=file --watch & esbuild public/vsellmCatalog.ts --bundle --outfile=public/vsellm-catalog.js --platform=browser --format=iife --global-name=VsellmCatalog --watch"
   },
   "keywords": [],
   "author": "",

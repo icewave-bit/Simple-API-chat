@@ -749,7 +749,7 @@ html.tiny-legacy body.compose-focus .chat-compose {
   </div>
 </div>
 
-<script src="/vsellm-catalog.js"></script>
+<script src="/legacy-models.js"></script>
 <script type="text/javascript">
 (function () {
   var STORAGE_KEY = "ai-chat-legacy-v1";
@@ -910,6 +910,65 @@ html.tiny-legacy body.compose-focus .chat-compose {
     x.send(body);
   }
 
+  var LEGACY_PROVIDER_LABELS = {
+    anthropic: "Anthropic",
+    deepseek: "DeepSeek",
+    google: "Google",
+    "meta-llama": "Meta",
+    moonshotai: "MoonshotAI",
+    openai: "OpenAI",
+    qwen: "Qwen",
+    xiaomi: "Xiaomi",
+    yandex: "Yandex",
+    "z-ai": "Z.AI",
+  };
+
+  function legacyProviderLabel(provider) {
+    return LEGACY_PROVIDER_LABELS[provider] || provider;
+  }
+
+  function legacyModelLabel(entry) {
+    if (!entry || !entry.name) return entry && entry.id ? entry.id : "";
+    if (entry.name.indexOf(":") >= 0) return entry.name;
+    return legacyProviderLabel(entry.provider) + ": " + entry.name;
+  }
+
+  function legacyCompareModels(a, b) {
+    var providerCompare = legacyProviderLabel(a.provider).localeCompare(
+      legacyProviderLabel(b.provider)
+    );
+    if (providerCompare !== 0) return providerCompare;
+    return legacyModelLabel(a).localeCompare(legacyModelLabel(b));
+  }
+
+  function getLegacySortedModels() {
+    var source =
+      typeof LEGACY_TEXT_MODELS !== "undefined" && LEGACY_TEXT_MODELS
+        ? LEGACY_TEXT_MODELS
+        : [];
+    return source.slice().sort(legacyCompareModels);
+  }
+
+  function getTypewriterChunkSize(totalLength) {
+    if (totalLength > 2000) return 6;
+    if (totalLength > 800) return 3;
+    if (totalLength > 300) return 2;
+    return 1;
+  }
+
+  function extractAssistantReply(data) {
+    if (data && typeof data.reply === "string" && data.reply) {
+      return data.reply;
+    }
+    var msgs = data && data.state && data.state.activeMessages;
+    if (!msgs || !msgs.length) return "";
+    var last = msgs[msgs.length - 1];
+    if (last && last.role === "assistant" && typeof last.content === "string") {
+      return last.content;
+    }
+    return "";
+  }
+
   var streamingRow = null;
   var streamingBubble = null;
 
@@ -955,11 +1014,33 @@ html.tiny-legacy body.compose-focus .chat-compose {
     return div;
   }
 
-  function updateStreamingBubble(text) {
+  function revealAssistantMessage(fullText, done) {
+    clearStreamingRow();
     var bubble = ensureStreamingBubble();
-    while (bubble.firstChild) bubble.removeChild(bubble.firstChild);
-    bubble.appendChild(document.createTextNode(text));
-    scrollLogToEnd();
+    var chunkSize = getTypewriterChunkSize(fullText.length);
+    var index = 0;
+
+    function step() {
+      index = Math.min(fullText.length, index + chunkSize);
+      while (bubble.firstChild) bubble.removeChild(bubble.firstChild);
+      bubble.appendChild(document.createTextNode(fullText.slice(0, index)));
+      scrollLogToEnd();
+
+      if (index < fullText.length) {
+        window.setTimeout(step, 16);
+        return;
+      }
+
+      if (streamingBubble) {
+        streamingBubble.className = "m m-assistant";
+      }
+      streamingRow = null;
+      streamingBubble = null;
+      scrollLogToEnd();
+      if (done) done();
+    }
+
+    step();
   }
 
   function appendUserMessageRow(text) {
@@ -994,118 +1075,6 @@ html.tiny-legacy body.compose-focus .chat-compose {
     return row;
   }
 
-  function handleStreamEvent(event, handlers) {
-    if (!event || !event.type) return false;
-
-    if (event.type === "delta" && typeof event.content === "string") {
-      handlers.onDelta(event.content);
-      return false;
-    }
-
-    if (event.type === "error") {
-      handlers.onError(event.error || "Stream failed.");
-      return true;
-    }
-
-    if (event.type === "done" && event.state) {
-      handlers.onDone({
-        reply: typeof event.reply === "string" ? event.reply : handlers.getFullText(),
-        state: event.state,
-      });
-      return true;
-    }
-
-    return false;
-  }
-
-  function parseSseSegments(segments, handlers) {
-    for (var i = 0; i < segments.length; i++) {
-      var lines = segments[i].split("\n");
-      for (var j = 0; j < lines.length; j++) {
-        var line = lines[j];
-        if (line.indexOf("data: ") !== 0) continue;
-        var raw = trim(line.slice(6));
-        if (!raw) continue;
-        var event = null;
-        try {
-          event = JSON.parse(raw);
-        } catch (e4) {
-          continue;
-        }
-        if (handleStreamEvent(event, handlers)) return true;
-      }
-    }
-    return false;
-  }
-
-  function xhrChatStream(bodyObj, handlers, done) {
-    var x = new XMLHttpRequest();
-    var processed = 0;
-    var sseBuffer = "";
-    var contentType = "";
-    var finished = false;
-
-    function finish() {
-      if (finished) return;
-      finished = true;
-      done();
-    }
-
-    function processChunk() {
-      if (finished) return;
-      var text = x.responseText || "";
-      if (text.length <= processed) return;
-
-      contentType = contentType || (x.getResponseHeader("Content-Type") || "");
-      sseBuffer += text.slice(processed);
-      processed = text.length;
-
-      if (contentType.indexOf("text/event-stream") === -1) return;
-
-      var segments = sseBuffer.split("\n\n");
-      sseBuffer = segments.pop() || "";
-      if (parseSseSegments(segments, handlers)) finish();
-    }
-
-    x.open("POST", "/api/chat/stream", true);
-    x.setRequestHeader("Content-Type", "application/json");
-    x.onprogress = processChunk;
-    x.onreadystatechange = function () {
-      if (x.readyState === 3) processChunk();
-      if (x.readyState !== 4) return;
-
-      processChunk();
-
-      if (finished) return;
-
-      contentType = contentType || (x.getResponseHeader("Content-Type") || "");
-      if (x.status < 200 || x.status >= 300 || contentType.indexOf("text/event-stream") === -1) {
-        var data = null;
-        try {
-          if (x.responseText) data = JSON.parse(x.responseText);
-        } catch (e5) {}
-        handlers.onError((data && data.error) || "Request failed.");
-        finish();
-        return;
-      }
-
-      if (sseBuffer) {
-        if (parseSseSegments([sseBuffer], handlers)) {
-          finish();
-          return;
-        }
-      }
-
-      if (handlers.getFullText()) {
-        handlers.onError("Stream ended without a complete response.");
-      } else {
-        handlers.onError("Stream ended without a response.");
-      }
-      finish();
-    };
-    x.send(JSON.stringify(bodyObj));
-  }
-
   function populateModelSelect(selectedId) {
     var sel = $("f-model");
     while (sel.firstChild) sel.removeChild(sel.firstChild);
@@ -1115,27 +1084,14 @@ html.tiny-legacy body.compose-focus .chat-compose {
     placeholder.appendChild(document.createTextNode("Choose a model"));
     sel.appendChild(placeholder);
 
-    var catalog =
-      window.VsellmCatalog && window.VsellmCatalog.getSortedTextModels
-        ? window.VsellmCatalog.getSortedTextModels()
-        : window.VsellmCatalog && window.VsellmCatalog.VSELLM_TEXT_MODELS
-          ? window.VsellmCatalog.VSELLM_TEXT_MODELS
-          : [];
+    var catalog = getLegacySortedModels();
 
     for (var i = 0; i < catalog.length; i++) {
       var entry = catalog[i];
       if (!entry || !entry.id) continue;
       var opt = document.createElement("option");
       opt.value = entry.id;
-      var label = entry.name || entry.id;
-      if (
-        window.VsellmCatalog &&
-        window.VsellmCatalog.formatVsellmModelOptionLabel &&
-        entry.name
-      ) {
-        label = window.VsellmCatalog.formatVsellmModelOptionLabel(entry);
-      }
-      opt.appendChild(document.createTextNode(label));
+      opt.appendChild(document.createTextNode(legacyModelLabel(entry)));
       sel.appendChild(opt);
     }
 
@@ -1349,8 +1305,9 @@ html.tiny-legacy body.compose-focus .chat-compose {
     $("f-msg").value = "";
     appendUserMessageRow(text);
 
-    var streamText = "";
-    xhrChatStream(
+    xhrJson(
+      "POST",
+      "/api/chat",
       {
         apiKey: app.apiKey,
         message: text,
@@ -1358,32 +1315,36 @@ html.tiny-legacy body.compose-focus .chat-compose {
         systemPrompt: app.systemPrompt,
         state: app.chatState,
       },
-      {
-        getFullText: function () {
-          return streamText;
-        },
-        onDelta: function (chunk) {
-          streamText += chunk;
-          updateStreamingBubble(streamText);
-        },
-        onDone: function (payload) {
-          clearStreamingRow();
-          app.chatState = {
-            activeMessages: payload.state.activeMessages || [],
-            archivedChats: payload.state.archivedChats || app.chatState.archivedChats || [],
-          };
-          persist();
-          renderLog();
-          renderArchive();
-        },
-        onError: function (message) {
+      function (status, data) {
+        if (status < 200 || status >= 300) {
           clearStreamingRow();
           renderLog();
-          setErr(message);
-        },
-      },
-      function () {
-        btn.disabled = false;
+          setErr((data && data.error) || "Request failed.");
+          btn.disabled = false;
+          return;
+        }
+
+        var assistantText = extractAssistantReply(data);
+        if (!assistantText) {
+          clearStreamingRow();
+          renderLog();
+          setErr("Empty response from the assistant.");
+          btn.disabled = false;
+          return;
+        }
+
+        revealAssistantMessage(assistantText, function () {
+          if (data && data.state) {
+            app.chatState = {
+              activeMessages: data.state.activeMessages || [],
+              archivedChats: data.state.archivedChats || app.chatState.archivedChats || [],
+            };
+            persist();
+            renderLog();
+            renderArchive();
+          }
+          btn.disabled = false;
+        });
       }
     );
     return false;
